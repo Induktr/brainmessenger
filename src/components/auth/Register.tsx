@@ -4,6 +4,8 @@ import { AuthLayout } from "./AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { AuthError } from "@supabase/supabase-js";
 
 export const Register = () => {
   const [email, setEmail] = useState("");
@@ -17,14 +19,34 @@ export const Register = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // TODO: Implement actual registration logic
-    setTimeout(() => {
-      toast({
-        title: "Coming soon!",
-        description: "Registration functionality will be implemented soon.",
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            username: name,
+          },
+        },
       });
+
+      if (error) throw error;
+
+      toast({
+        title: "Account created!",
+        description: "Please check your email to verify your account.",
+      });
+      navigate("/login");
+    } catch (error) {
+      const authError = error as AuthError;
+      toast({
+        title: "Error",
+        description: authError.message,
+        variant: "destructive",
+      });
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   return (
