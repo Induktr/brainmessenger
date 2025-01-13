@@ -5,18 +5,59 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { AuthError } from "@supabase/supabase-js";
+import { AuthError, AuthApiError } from "@supabase/supabase-js";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export const Register = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const validateForm = () => {
+    if (!email || !password || !name) {
+      setErrorMessage("Please fill in all fields");
+      return false;
+    }
+    if (!/\S+@\S+\.\S+/.test(email)) {
+      setErrorMessage("Please enter a valid email address");
+      return false;
+    }
+    if (password.length < 6) {
+      setErrorMessage("Password must be at least 6 characters long");
+      return false;
+    }
+    return true;
+  };
+
+  const getErrorMessage = (error: AuthError) => {
+    if (error instanceof AuthApiError) {
+      switch (error.status) {
+        case 400:
+          if (error.message.includes("already registered")) {
+            return "This email is already registered. Please try logging in instead.";
+          }
+          return error.message;
+        case 422:
+          return "Invalid email format. Please enter a valid email address.";
+        default:
+          return error.message;
+      }
+    }
+    return "An unexpected error occurred. Please try again.";
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+
+    if (!validateForm()) {
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -39,9 +80,11 @@ export const Register = () => {
       navigate("/login");
     } catch (error) {
       const authError = error as AuthError;
+      const message = getErrorMessage(authError);
+      setErrorMessage(message);
       toast({
         title: "Error",
-        description: authError.message,
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -55,6 +98,11 @@ export const Register = () => {
       subtitle="Join our community and start chatting"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {errorMessage && (
+          <Alert variant="destructive">
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
+        )}
         <div className="space-y-2">
           <Input
             type="text"
