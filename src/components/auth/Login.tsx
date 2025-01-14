@@ -33,11 +33,16 @@ export const Login = () => {
       switch (error.status) {
         case 400:
           if (error.message.includes("Email not confirmed")) {
-            return "Please verify your email address before signing in.";
+            return "Please verify your email address before signing in. Check your inbox for the verification link.";
+          }
+          if (error.message.includes("Invalid login credentials")) {
+            return "The email or password you entered is incorrect. Please try again or use the 'Forgot password' option below.";
           }
           return "Invalid email or password. Please check your credentials and try again.";
         case 422:
-          return "Invalid email format. Please enter a valid email address.";
+          return "Please enter a valid email address.";
+        case 429:
+          return "Too many login attempts. Please try again later.";
         default:
           return error.message;
       }
@@ -59,6 +64,10 @@ export const Login = () => {
       return false;
     }
     return true;
+  };
+
+  const clearError = () => {
+    setErrorMessage(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -85,10 +94,12 @@ export const Login = () => {
       });
     } catch (error) {
       const authError = error as AuthError;
-      setErrorMessage(getErrorMessage(authError));
+      const message = getErrorMessage(authError);
+      setErrorMessage(message);
+      setPassword(""); // Clear password on error for security
       toast({
         title: "Error",
-        description: getErrorMessage(authError),
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -112,7 +123,10 @@ export const Login = () => {
             type="email"
             placeholder="Email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              clearError();
+            }}
             required
             className="w-full"
           />
@@ -122,7 +136,10 @@ export const Login = () => {
             type="password"
             placeholder="Password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              clearError();
+            }}
             required
             className="w-full"
           />
