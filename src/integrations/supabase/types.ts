@@ -13,16 +13,19 @@ export type Database = {
         Row: {
           chat_id: string
           joined_at: string
+          last_read_time: string
           user_id: string
         }
         Insert: {
           chat_id: string
           joined_at?: string
+          last_read_time?: string
           user_id: string
         }
         Update: {
           chat_id?: string
           joined_at?: string
+          last_read_time?: string
           user_id?: string
         }
         Relationships: [
@@ -130,6 +133,42 @@ export type Database = {
           id?: string
           updated_at?: string | null
           username?: string | null
+        }
+        Relationships: []
+      }
+      user_sessions: {
+        Row: {
+          created_at: string
+          device_info: Json | null
+          ended_at: string | null
+          id: string
+          ip_address: string | null
+          logout_reason: string | null
+          started_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_info?: Json | null
+          ended_at?: string | null
+          id?: string
+          ip_address?: string | null
+          logout_reason?: string | null
+          started_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_info?: Json | null
+          ended_at?: string | null
+          id?: string
+          ip_address?: string | null
+          logout_reason?: string | null
+          started_at?: string
+          user_agent?: string | null
+          user_id?: string
         }
         Relationships: []
       }
