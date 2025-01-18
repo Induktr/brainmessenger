@@ -7,7 +7,7 @@ interface ChatMember {
   chat_id: string;
   user_id: string;
   joined_at: string;
-  user: {
+  profile: {
     id: string;
     display_name: string;
     avatar_url: string | null;
@@ -20,28 +20,33 @@ export const Chat = () => {
 
   const fetchChatMembers = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: chatMembersData, error: chatMembersError } = await supabase
         .from('chat_members')
-        .select(`
-          chat_id,
-          user_id,
-          joined_at,
-          user:profiles!chat_members_user_id_fkey (
-            id,
-            display_name,
-            avatar_url
-          )
-        `)
-        .returns<ChatMember[]>();
+        .select('chat_id, user_id, joined_at');
 
-      if (error) {
-        console.error('Error fetching chat members:', error);
+      if (chatMembersError) {
+        console.error('Error fetching chat members:', chatMembersError);
         toast.error('Failed to load chat members');
         return;
       }
 
-      if (data) {
-        setMembers(data);
+      if (chatMembersData) {
+        // Fetch associated profiles
+        const memberPromises = chatMembersData.map(async (member) => {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url')
+            .eq('id', member.user_id)
+            .single();
+
+          return {
+            ...member,
+            profile: profileData
+          };
+        });
+
+        const membersWithProfiles = await Promise.all(memberPromises);
+        setMembers(membersWithProfiles);
       }
     } catch (err) {
       console.error('Error in fetchChatMembers:', err);
@@ -80,16 +85,16 @@ export const Chat = () => {
             className="flex items-center space-x-4 p-4 bg-card rounded-lg shadow"
           >
             <div className="flex-shrink-0">
-              {member.user?.avatar_url && (
+              {member.profile?.avatar_url && (
                 <img 
-                  src={member.user.avatar_url} 
-                  alt={member.user.display_name}
+                  src={member.profile.avatar_url} 
+                  alt={member.profile.display_name}
                   className="h-10 w-10 rounded-full"
                 />
               )}
             </div>
             <div>
-              <p className="font-medium">{member.user?.display_name}</p>
+              <p className="font-medium">{member.profile?.display_name}</p>
               <p className="text-sm text-muted-foreground">
                 Joined {new Date(member.joined_at).toLocaleDateString()}
               </p>
