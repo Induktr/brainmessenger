@@ -34,27 +34,37 @@ export const Chat = () => {
   const fetchChatMembers = async () => {
     try {
       setLoading(true);
-      const { data: chatMembers, error } = await supabase
+      
+      // First fetch chat members
+      const { data: chatMembers, error: chatError } = await supabase
         .from('chat_members')
-        .select('chat_id, user_id, joined_at')
-        .throwOnError();
+        .select('chat_id, user_id, joined_at');
 
-      if (error) throw error;
+      if (chatError) {
+        console.error('Error fetching chat members:', chatError);
+        toast.error('Failed to load chat members');
+        return;
+      }
 
-      if (!chatMembers) {
+      if (!chatMembers?.length) {
         setMembers([]);
         return;
       }
 
+      // Then fetch profiles for those members
       const userIds = chatMembers.map(member => member.user_id);
-      const { data: profiles, error: profilesError } = await supabase
+      const { data: profiles, error: profileError } = await supabase
         .from('profiles')
         .select('id, display_name, avatar_url')
-        .in('id', userIds)
-        .throwOnError();
+        .in('id', userIds);
 
-      if (profilesError) throw profilesError;
+      if (profileError) {
+        console.error('Error fetching profiles:', profileError);
+        toast.error('Failed to load user profiles');
+        return;
+      }
 
+      // Combine the data
       const membersWithProfiles = chatMembers.map(member => ({
         ...member,
         profile: profiles?.find(profile => profile.id === member.user_id) || null
