@@ -31,7 +31,8 @@ export const Chat = () => {
             display_name,
             avatar_url
           )
-        `);
+        `)
+        .returns<ChatMember[]>();
 
       if (error) {
         console.error('Error fetching chat members:', error);
@@ -40,7 +41,7 @@ export const Chat = () => {
       }
 
       if (data) {
-        setMembers(data as ChatMember[]);
+        setMembers(data);
       }
     } catch (err) {
       console.error('Error in fetchChatMembers:', err);
