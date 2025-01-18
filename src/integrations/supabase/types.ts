@@ -30,12 +30,184 @@ export type Database = {
         }
         Relationships: []
       }
+      user_sessions: {
+        Row: {
+          id: string
+          user_id: string
+          started_at: string
+          ended_at: string | null
+          ip_address: string | null
+          user_agent: string | null
+          device_info: Json
+          logout_reason: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          started_at?: string
+          ended_at?: string | null
+          ip_address?: string | null
+          user_agent?: string | null
+          device_info?: Json
+          logout_reason?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          started_at?: string
+          ended_at?: string | null
+          ip_address?: string | null
+          user_agent?: string | null
+          device_info?: Json
+          logout_reason?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_sessions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      chats: {
+        Row: {
+          id: string
+          name: string
+          is_group: boolean
+          created_by: string
+          created_at: string
+          last_message: string | null
+          last_message_time: string | null
+          pinned: boolean
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          is_group?: boolean
+          created_by: string
+          created_at?: string
+          last_message?: string | null
+          last_message_time?: string | null
+          pinned?: boolean
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          is_group?: boolean
+          created_by?: string
+          created_at?: string
+          last_message?: string | null
+          last_message_time?: string | null
+          pinned?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chats_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      messages: {
+        Row: {
+          id: string
+          chat_id: string
+          sender_id: string
+          content: string
+          type: 'text' | 'image' | 'audio' | 'video'
+          created_at: string
+          reactions: Json
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          chat_id: string
+          sender_id: string
+          content: string
+          type: 'text' | 'image' | 'audio' | 'video'
+          created_at?: string
+          reactions?: Json
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          chat_id?: string
+          sender_id?: string
+          content?: string
+          type?: 'text' | 'image' | 'audio' | 'video'
+          created_at?: string
+          reactions?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      chat_members: {
+        Row: {
+          chat_id: string
+          user_id: string
+          joined_at: string
+        }
+        Insert: {
+          chat_id: string
+          user_id: string
+          joined_at?: string
+        }
+        Update: {
+          chat_id?: string
+          user_id?: string
+          joined_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_members_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      update_chat_last_message: {
+        Args: Record<PropertyKey, never>
+        Returns: unknown
+      }
     }
     Enums: {
       [_ in never]: never
@@ -65,8 +237,7 @@ export type Tables<
     : never
   : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
         PublicSchema["Views"])
-    ? (PublicSchema["Tables"] &
-        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
+    ? (PublicSchema["Tables"] & PublicSchema["Views"])[PublicTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
