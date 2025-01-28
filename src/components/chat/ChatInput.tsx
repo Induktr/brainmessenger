@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Image as ImageIcon, Send, Paperclip, Mic } from 'lucide-react';
+import { Send, Paperclip, Mic } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ChatInputProps {
@@ -99,18 +99,20 @@ export const ChatInput = ({ onSendMessage, className, onTyping, chatId }: ChatIn
         onChange={handleMessageChange}
         onKeyDown={handleKeyPress}
         placeholder="Type a message..."
-        className="flex-1 min-h-[2.5rem] max-h-[150px] resize-none"
-        rows={1}
+        className="flex-1 bg-neutral-background dark:bg-dark-background min-h-[2.5rem] max-h-[150px] resize-none"
       />
       {message.trim() ? (
-        <Button onClick={handleSend}>
+        <Button
+          onClick={handleSend}
+          className="bg-primary hover:bg-primary-secondary text-neutral-background dark:bg-dark-primary dark:hover:bg-dark-secondary dark:text-dark-textPrimary"
+        >
           <Send className="h-5 w-5" />
         </Button>
       ) : (
         <Button
           variant="ghost"
           size="icon"
-          className={cn(isRecording && "text-destructive")}
+          className={cn(isRecording && "text-destructive hover:bg-neutral-surface dark:hover:bg-dark-surface")}
           onClick={() => setIsRecording(!isRecording)}
         >
           <Mic className="h-5 w-5" />

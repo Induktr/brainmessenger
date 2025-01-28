@@ -4,9 +4,8 @@ import { AuthLayout } from "./AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-import { AuthError, AuthApiError } from "@supabase/supabase-js";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { supabase } from "@/lib/supabase";
+import { AuthApiError } from "@supabase/supabase-js";
 import { validateEmail, validatePassword, validateNickname } from "@/utils/validation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { InfoCircledIcon } from "@radix-ui/react-icons";
@@ -61,57 +60,117 @@ export const Register = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrors({});
+    
+    // Clear previous errors
+    const newErrors: { [key: string]: string[] } = {};
 
-    // Validate all fields
-    validateField('email', email);
-    validateField('password', password);
-    validateField('nickname', nickname);
+    // Synchronous validation
+    if (!validateEmail(email)) {
+      newErrors.email = ['Please enter a valid email address'];
+    }
 
-    if (Object.keys(errors).length > 0) {
+    const { isValid: isPasswordValid, errors: passwordErrors } = validatePassword(password);
+    if (!isPasswordValid) {
+      newErrors.password = passwordErrors;
+    }
+
+    const { isValid: isNicknameValid, errors: nicknameErrors } = validateNickname(nickname);
+    if (!isNicknameValid) {
+      newErrors.nickname = nicknameErrors;
+    }
+
+    // Check for validation errors
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
 
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      // Validate redirect URL
+      const redirectTo = new URL('/auth/callback', window.location.origin).toString();
+      
+      // Step 1: Sign up the user with enhanced error handling
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password,
         options: {
           data: {
-            username: nickname.trim(),
+            username: nickname.trim().toLowerCase(),
+            email_confirm: true
           },
-          emailRedirectTo: window.location.origin + '/login',
-        },
+          emailRedirectTo: redirectTo
+        }
       });
 
-      if (error) {
-        if (error instanceof AuthApiError) {
-          if (error.message.includes('already registered')) {
-            setErrors({ email: ['This email is already registered. Please try logging in instead.'] });
-            return;
+      if (signUpError) {
+        console.error('Signup error:', signUpError);
+        
+        // Enhanced error handling
+        if (signUpError instanceof AuthApiError) {
+          switch (signUpError.status) {
+            case 500:
+              setErrors({ 
+                form: ['Server error. Our team has been notified. Please try again later.']
+              });
+              // Log the error for debugging
+              console.error('Internal Server Error during signup:', signUpError);
+              break;
+            case 422:
+              setErrors({ 
+                form: ['Please check your input. Email must be valid and password must meet requirements.']
+              });
+              break;
+            case 429:
+              setErrors({
+                form: ['Too many attempts. Please wait a few minutes before trying again.']
+              });
+              break;
+            case 400:
+              if (signUpError.message.includes('already registered')) {
+                setErrors({ email: ['This email is already registered. Please try logging in instead.'] });
+              } else if (signUpError.message.includes('Username')) {
+                setErrors({ nickname: ['This username is already taken. Please choose another.'] });
+              } else {
+                setErrors({ form: [signUpError.message] });
+              }
+              break;
+            default:
+              setErrors({ 
+                form: ['An unexpected error occurred. Please try again or contact support.']
+              });
           }
-          throw error;
+          return;
         }
+        if (signUpError.message.includes('username_unique')) {
+          setErrors({ nickname: ['Username already taken'] });
+          return;
+        }
+        throw signUpError;
       }
 
-      if (!data.user || data.user.identities?.length === 0) {
-        setErrors({ email: ['This email is already registered. Please try logging in instead.'] });
+      if (!authData.user || !authData.user.id) {
+        setErrors({ form: ['Failed to create account. Please try again.'] });
         return;
       }
 
+      // Success notification
       toast({
-        title: "Account created!",
-        description: "Please check your email to verify your account.",
+        title: "Registration successful!",
+        description: "Please check your email to verify your account. The verification link will expire in 24 hours.",
+        duration: 6000
       });
-      navigate("/login");
+      
+      // Redirect to login page after a short delay
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000);
+
     } catch (error) {
-      const authError = error as AuthError;
-      toast({
-        title: "Error",
-        description: "An unexpected error occurred. Please try again.",
-        variant: "destructive",
+      console.error('Registration error:', error);
+      setErrors({
+        form: ['An unexpected error occurred. Please try again later.']
       });
     } finally {
       setIsLoading(false);

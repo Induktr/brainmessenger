@@ -6,6 +6,70 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+export interface Message {
+  id: string
+  conversation_id: string | null
+  chat_id: string | null
+  sender_id: string
+  content: string
+  created_at: string
+  updated_at: string
+  is_read: boolean
+  type: 'text' | 'image' | 'audio' | 'video'
+  reactions: Json
+}
+
+export interface Conversation {
+  id: string
+  created_at: string
+  updated_at: string
+  user1_id: string
+  user2_id: string
+  last_message: Json | null
+}
+
+export interface Chat {
+  id: string
+  name: string
+  is_group: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+  last_message: Json | null
+  pinned: boolean
+}
+
+export interface ChatMember {
+  chat_id: string
+  user_id: string
+  joined_at: string
+}
+
+export interface ChatMemberWithRelations extends ChatMember {
+  profiles: {
+    id: string
+    display_name: string
+    avatar_url: string | null
+  }
+  chats: Chat
+}
+
+export interface ChatWithMembers extends Chat {
+  chat_members: (ChatMember & {
+    user: {
+      id: string
+      display_name: string
+      avatar_url: string | null
+    }
+  })[]
+}
+
+export interface Profile {
+  id: string
+  display_name: string
+  avatar_url: string | null
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -15,18 +79,21 @@ export type Database = {
           id: string
           updated_at: string | null
           username: string | null
+          display_name: string | null
         }
         Insert: {
           avatar_url?: string | null
           id: string
           updated_at?: string | null
           username?: string | null
+          display_name?: string | null
         }
         Update: {
           avatar_url?: string | null
           id?: string
           updated_at?: string | null
           username?: string | null
+          display_name?: string | null
         }
         Relationships: []
       }
@@ -74,44 +141,21 @@ export type Database = {
           }
         ]
       }
-      chats: {
-        Row: {
-          id: string
-          name: string
-          is_group: boolean
-          created_by: string
-          created_at: string
-          last_message: string | null
-          last_message_time: string | null
-          pinned: boolean
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          is_group?: boolean
-          created_by: string
-          created_at?: string
-          last_message?: string | null
-          last_message_time?: string | null
-          pinned?: boolean
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          is_group?: boolean
-          created_by?: string
-          created_at?: string
-          last_message?: string | null
-          last_message_time?: string | null
-          pinned?: boolean
-          updated_at?: string
-        }
+      conversations: {
+        Row: Conversation
+        Insert: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Conversation>
         Relationships: [
           {
-            foreignKeyName: "chats_created_by_fkey"
-            columns: ["created_by"]
+            foreignKeyName: "conversations_user1_id_fkey"
+            columns: ["user1_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_user2_id_fkey"
+            columns: ["user2_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -119,37 +163,17 @@ export type Database = {
         ]
       }
       messages: {
-        Row: {
-          id: string
-          chat_id: string
-          sender_id: string
-          content: string
-          type: 'text' | 'image' | 'audio' | 'video'
-          created_at: string
-          reactions: Json
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          chat_id: string
-          sender_id: string
-          content: string
-          type: 'text' | 'image' | 'audio' | 'video'
-          created_at?: string
-          reactions?: Json
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          chat_id?: string
-          sender_id?: string
-          content?: string
-          type?: 'text' | 'image' | 'audio' | 'video'
-          created_at?: string
-          reactions?: Json
-          updated_at?: string
-        }
+        Row: Message
+        Insert: Omit<Message, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Message>
         Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "messages_chat_id_fkey"
             columns: ["chat_id"]
@@ -166,22 +190,24 @@ export type Database = {
           }
         ]
       }
+      chats: {
+        Row: Chat
+        Insert: Omit<Chat, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Chat>
+        Relationships: [
+          {
+            foreignKeyName: "chats_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       chat_members: {
-        Row: {
-          chat_id: string
-          user_id: string
-          joined_at: string
-        }
-        Insert: {
-          chat_id: string
-          user_id: string
-          joined_at?: string
-        }
-        Update: {
-          chat_id?: string
-          user_id?: string
-          joined_at?: string
-        }
+        Row: ChatMember
+        Insert: Omit<ChatMember, 'joined_at'>
+        Update: Partial<ChatMember>
         Relationships: [
           {
             foreignKeyName: "chat_members_chat_id_fkey"
@@ -204,10 +230,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      update_chat_last_message: {
-        Args: Record<PropertyKey, never>
-        Returns: unknown
-      }
+      [_ in never]: never
     }
     Enums: {
       [_ in never]: never

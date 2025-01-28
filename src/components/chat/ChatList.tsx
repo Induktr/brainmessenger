@@ -16,8 +16,8 @@ interface Chat {
   id: string;
   name: string;
   is_group: boolean;
-  last_message?: string;
-  last_message_time?: string;
+  last_message: string | null;
+  last_message_time: string | null;
   pinned: boolean;
   unread_count?: number;
   message_count?: number;
@@ -125,7 +125,7 @@ export const ChatList = ({
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{chat.name}</span>
                     {chat.pinned && <Pin className="h-4 w-4 text-primary" />}
-                    {chat.unread_count > 0 && (
+                    {(chat.unread_count ?? 0) > 0 && (
                       <Badge variant="secondary" className="ml-auto">
                         {chat.unread_count}
                       </Badge>

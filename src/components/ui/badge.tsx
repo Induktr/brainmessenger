@@ -4,17 +4,18 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
   {
     variants: {
       variant: {
         default:
-          "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
+          "border-transparent bg-primary text-neutral-background hover:bg-primary-secondary dark:bg-dark-primary dark:hover:bg-dark-secondary dark:text-dark-textPrimary",
         secondary:
-          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "border-transparent bg-primary-secondary text-neutral-background hover:bg-primary dark:bg-dark-secondary dark:hover:bg-dark-primary dark:text-dark-textPrimary",
         destructive:
-          "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
-        outline: "text-foreground",
+          "border-transparent bg-accent-error text-neutral-background hover:bg-accent-error/90 dark:text-dark-textPrimary",
+        outline: "text-neutral-textPrimary dark:text-dark-textPrimary border-neutral-border dark:border-dark-border",
+        warning: "border-transparent bg-accent-warning text-neutral-textPrimary hover:bg-accent-warning/90 dark:text-dark-textPrimary",
       },
     },
     defaultVariants: {

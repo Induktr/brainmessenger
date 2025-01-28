@@ -6,35 +6,56 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 142.1 76.2% 36.3%;
-    --primary-foreground: 355.7 100% 97.3%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 142.1 76.2% 36.3%;
+    /* Light Mode Variables */
+    --color-primary: #1ED94F;
+    --color-primary-secondary: #96C93D;
+    
+    --color-accent-warning: #F2F047;
+    --color-accent-action: #00BFFF;
+    --color-accent-error: #FF6347;
+    
+    --color-background: #FFFFFF;
+    --color-surface: #F0F0F0;
+    --color-border: #E8E8D9;
+    --color-text-primary: #333333;
+    --color-text-secondary: #4D4D4D;
+    
     --radius: 0.75rem;
+  }
+
+  .dark {
+    /* Dark Mode Variables */
+    --color-primary: #96C93D;
+    --color-primary-secondary: #1ED94F;
+    
+    --color-background: #333333;
+    --color-surface: #4D4D4D;
+    --color-border: #B0B0B0;
+    --color-text-primary: #FFFFFF;
+    --color-text-secondary: #D9E8D9;
   }
 }
 
 @layer base {
   * {
-    @apply border-border;
+    @apply border-neutral-border;
+    margin: 0;
+    padding: 0;
   }
+  
   body {
-    @apply bg-background text-foreground;
+    @apply bg-neutral-background text-neutral-textPrimary dark:bg-dark-background dark:text-dark-textPrimary;
     font-family: 'Inter', sans-serif;
+  }
+
+  /* Interactive Elements */
+  button {
+    @apply bg-primary hover:bg-primary-secondary text-neutral-background 
+           dark:bg-dark-primary dark:hover:bg-dark-secondary dark:text-dark-textPrimary;
+  }
+
+  /* Links */
+  a {
+    @apply text-accent-action hover:underline;
   }
 }

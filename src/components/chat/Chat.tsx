@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase";
+import type { Database } from '@/types/supabase';
 import { ChatList } from "./ChatList";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
 import { Button } from "@/components/ui/button";
 import { Menu, Plus, Settings } from "lucide-react";
-import { UserMenu } from "@/components/auth/UserMenu";
 import { User } from "@supabase/supabase-js";
-import { Chat as ChatType, Message, transformDatabaseChat, DatabaseChatResponse } from "@/types/chat";
+import { 
+  Chat as ChatType, 
+  Message, 
+  isDatabaseChatResponse, 
+  transformDatabaseChat} from "@/types/chat";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -76,9 +80,51 @@ export const Chat = () => {
     if (!user) return;
 
     let isSubscribed = true;
-    let chatChannel: ReturnType<typeof supabase.channel> | null = null;
-    let retryCount = 0;
     const MAX_RETRIES = 3;
+    let retryCount = 0;
+    const chatIds = new Set(chats.map(chat => chat.id));
+    const chatChannel = supabase.channel('chat-updates');
+    
+    const setupSubscription = async () => {
+      if (!isSubscribed) return;
+      
+      try {
+        await chatChannel
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'chats',
+              filter: chatIds.size > 0 ? `id=in.(${Array.from(chatIds).join(',')})` : undefined
+            }, 
+            () => {
+              if (isSubscribed) {
+                fetchChats();
+              }
+            }
+          )
+          .on('presence', { event: 'sync' }, () => {
+            if (!isSubscribed) return;
+            const state = chatChannel.presenceState() ?? {};
+            const online = new Set(
+              Object.values(state)
+                .flat()
+                .map((presence: { presence_ref: string }) => presence.presence_ref)
+            );
+            setOnlineUsers(online);
+          })
+          .subscribe();
+
+        if (user?.id) {
+          await chatChannel.track({
+            user_id: user.id,
+            online_at: new Date().toISOString(),
+          });
+        }
+      } catch (error) {
+        console.error('Subscription error:', error);
+      }
+    };
 
     const fetchChats = async () => {
       if (!isSubscribed || !user) return;
@@ -87,61 +133,18 @@ export const Chat = () => {
         setIsLoading(true);
         setError(null);
 
-        // Type guard for profile data
-        type ValidMemberData = {
-          chat_id: string;
-          user_id: string;
-          joined_at: string;
-          profiles: {
-            id: string;
-            display_name: string;
-            avatar_url: string | null;
-          };
-          chats: {
-            id: string;
-            name: string;
-            is_group: boolean;
-            created_by: string;
-            created_at: string;
-            last_message?: string;
-            last_message_time?: string;
-            pinned: boolean;
-            updated_at: string;
-          };
-        };
-
-        const isValidMemberData = (member: any): member is ValidMemberData => {
-          return (
-            member &&
-            typeof member.chat_id === 'string' &&
-            typeof member.user_id === 'string' &&
-            typeof member.joined_at === 'string' &&
-            member.profiles &&
-            typeof member.profiles.id === 'string' &&
-            typeof member.profiles.display_name === 'string' &&
-            member.chats &&
-            typeof member.chats.id === 'string' &&
-            typeof member.chats.name === 'string' &&
-            typeof member.chats.is_group === 'boolean' &&
-            typeof member.chats.created_by === 'string' &&
-            typeof member.chats.created_at === 'string' &&
-            typeof member.chats.updated_at === 'string' &&
-            typeof member.chats.pinned === 'boolean'
-          );
-        };
-
         const { data: memberData, error: memberError } = await supabase
           .from('chat_members')
           .select(`
             chat_id,
-            user_id,
+            profile_id,
             joined_at,
-            profiles:user_id (
+            profiles!chat_members_profile_id_fkey (
               id,
               display_name,
               avatar_url
             ),
-            chats:chat_id (
+            chats!chat_members_chat_id_fkey (
               id,
               name,
               is_group,
@@ -153,7 +156,7 @@ export const Chat = () => {
               updated_at
             )
           `)
-          .eq('user_id', user.id)
+          .eq('profile_id', user.id)
           .order('chats(pinned)', { ascending: false })
           .order('chats(updated_at)', { ascending: false });
 
@@ -165,32 +168,9 @@ export const Chat = () => {
           throw new Error('No chat data received');
         }
 
-        // Transform the data with strict type checking
         const validChats = memberData
-          .filter(isValidMemberData)
-          .map(member => ({
-            id: member.chats.id,
-            name: member.chats.name,
-            is_group: member.chats.is_group,
-            created_by: member.chats.created_by,
-            created_at: member.chats.created_at,
-            last_message: member.chats.last_message,
-            last_message_time: member.chats.last_message_time,
-            pinned: member.chats.pinned,
-            updated_at: member.chats.updated_at,
-            unread_count: 0,
-            unread: false,
-            chat_members: [{
-              chat_id: member.chat_id,
-              user_id: member.user_id,
-              joined_at: member.joined_at,
-              user: {
-                id: member.profiles.id,
-                display_name: member.profiles.display_name,
-                avatar_url: member.profiles.avatar_url
-              }
-            }]
-          }));
+          .filter(isDatabaseChatResponse)
+          .map(transformDatabaseChat);
 
         if (isSubscribed) {
           setChats(validChats);
@@ -216,51 +196,17 @@ export const Chat = () => {
       }
     };
 
-    fetchChats();
-
-    chatChannel = supabase
-      .channel('chat-updates')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'chats',
-          filter: `id=in.(${chats.map(chat => chat.id).join(',')})` 
-        }, 
-        () => {
-          fetchChats();
-        }
-      )
-      .on('presence', { event: 'sync' }, () => {
-        const state = chatChannel?.presenceState() ?? {};
-        const online = new Set(
-          Object.values(state)
-            .flat()
-            .map((presence: any) => presence.user_id)
-        );
-        setOnlineUsers(online);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await chatChannel?.track({
-            user_id: user.id,
-            online_at: new Date().toISOString(),
-          });
-        }
-      });
+    setupSubscription();
 
     return () => {
       isSubscribed = false;
       chatChannel?.unsubscribe();
     };
-  }, [user, chats]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user) return;
-
-    let isSubscribed = true;
-    let chatChannel: ReturnType<typeof supabase.channel> | null = null;
-
+    
     const fetchMessages = async () => {
       if (!selectedChat) return;
 
@@ -276,7 +222,10 @@ export const Chat = () => {
       }
 
       if (data) {
-        setMessages(data);
+        setMessages(data.map(msg => ({
+          ...msg,
+          reactions: msg.reactions as Record<string, any> || {}
+        })));
       }
     };
 
@@ -306,7 +255,7 @@ export const Chat = () => {
   }, [user]);
 
   const handleTyping = async (chatId: string, isTyping: boolean) => {
-    if (!user) return;
+    if (!user) return () => {};
     
     const channel = supabase.channel(`typing:${chatId}`);
     if (isTyping) {
@@ -372,8 +321,11 @@ export const Chat = () => {
       .insert({
         name: newChatName.trim(),
         is_group: isGroup,
-        created_by: user.id
-      })
+        created_by: user.id,
+        pinned: false,
+        last_message: null,
+        last_message_time: null
+      } as Database['public']['Tables']['chats']['Insert'])
       .select()
       .single();
 
@@ -438,9 +390,9 @@ export const Chat = () => {
   );
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Chat List Sidebar */}
-      <div className="w-80 border-r flex flex-col">
+    <div className="flex h-screen">
+      {/* Sidebar */}
+      <div className="w-64 border-r border-neutral-border bg-neutral-surface p-4 dark:border-dark-border dark:bg-dark-surface">
         <div className="p-4 border-b flex items-center justify-between">
           <h1 className="text-xl font-semibold">BrainMessenger</h1>
           <div className="flex items-center space-x-2">
@@ -460,7 +412,9 @@ export const Chat = () => {
                   <span>Settings</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <UserMenu asDropdownItems />
+                <DropdownMenuItem onClick={() => supabase.auth.signOut()}>
+                  <span>Logout</span>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -479,14 +433,15 @@ export const Chat = () => {
         />
       </div>
 
-      {/* Chat Content */}
-      <div className="flex-1 flex flex-col">
+      {/* Main Chat Area */}
+      <div className="flex flex-1 flex-col">
         {selectedChat ? (
           <>
-            <div className="border-b p-4">
+            {/* Chat Header */}
+            <div className="border-b border-neutral-border bg-neutral-background p-4 dark:border-dark-border dark:bg-dark-background">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-xl font-semibold">{selectedChat.name}</h2>
+                  <h2 className="text-lg font-semibold">{selectedChat.name}</h2>
                   {selectedChat.is_group && (
                     <Users className="h-5 w-5 text-muted-foreground" />
                   )}
@@ -509,19 +464,24 @@ export const Chat = () => {
                 </Button>
               </div>
             </div>
-            <ChatMessages
-              messages={messages}
-              currentUser={user!}
-              onReaction={handleReaction}
-              className="flex-1"
-              typingUsers={typingUsers}
-              onlineUsers={onlineUsers}
-            />
-            <ChatInput 
-              onSendMessage={handleSendMessage} 
-              onTyping={handleTyping}
-              chatId={selectedChat.id}
-            />
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto bg-neutral-background p-4 dark:bg-dark-background">
+              <ChatMessages
+                messages={messages}
+                currentUser={user!}
+                onReaction={handleReaction}
+                typingUsers={typingUsers}
+                onlineUsers={onlineUsers}
+              />
+            </div>
+            {/* Input Area */}
+            <div className="border-t border-neutral-border bg-neutral-surface p-4 dark:border-dark-border dark:bg-dark-surface">
+              <ChatInput 
+                onSendMessage={handleSendMessage} 
+                onTyping={handleTyping}
+                chatId={selectedChat.id}
+              />
+            </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -532,7 +492,7 @@ export const Chat = () => {
 
       {/* New Chat Dialog */}
       <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
-        <DialogContent>
+        <DialogContent className="bg-neutral-background border border-neutral-border">
           <DialogHeader>
             <DialogTitle>Create New Chat</DialogTitle>
           </DialogHeader>
@@ -544,6 +504,7 @@ export const Chat = () => {
                 value={newChatName}
                 onChange={(e) => setNewChatName(e.target.value)}
                 placeholder="Enter chat name..."
+                className="bg-neutral-background border-neutral-border placeholder:text-neutral-textSecondary"
               />
             </div>
             <div className="flex items-center space-x-2">
@@ -552,10 +513,11 @@ export const Chat = () => {
                 id="isGroup"
                 checked={isGroup}
                 onChange={(e) => setIsGroup(e.target.checked)}
+                className="accent-green-500"
               />
               <Label htmlFor="isGroup">Is this a group chat?</Label>
             </div>
-            <Button onClick={handleCreateChat} className="w-full">
+            <Button onClick={handleCreateChat} className="w-full bg-green-500 hover:bg-green-600">
               Create Chat
             </Button>
           </div>

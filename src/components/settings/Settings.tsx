@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { UserSettings, SUPPORTED_LANGUAGES } from '@/types/settings';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -12,14 +11,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { InfoCircledIcon } from '@radix-ui/react-icons';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { useAuth } from "@/hooks/useAuth";
 import { AvatarUpload } from "./AvatarUpload";
+import { PersonalInformation } from "./PersonalInformation";
 
 interface SettingsDialogProps {
   open?: boolean;
@@ -82,9 +79,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <SettingsIcon className="h-5 w-5" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" aria-describedby="settings-description">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
+          <DialogDescription id="settings-description">
+            Manage your account settings and preferences
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-6">
           <Tabs defaultValue="personal" className="w-full">
@@ -104,62 +104,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     Manage your personal information and how others see you
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center gap-4">
-                    <Avatar className="h-20 w-20">
-                      <AvatarImage src={avatarUrl} />
-                      <AvatarFallback>
-                        {user?.email?.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <Button
-                      variant="outline"
-                      onClick={() => setIsAvatarDialogOpen(true)}
-                    >
-                      Change Avatar
-                    </Button>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="displayName">Display Name</Label>
-                    <Input
-                      id="displayName"
-                      value={settings.personalInfo.displayName}
-                      onChange={(e) =>
-                        handleSettingChange('personalInfo', 'displayName', e.target.value)
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="bio">Bio</Label>
-                    <Input
-                      id="bio"
-                      value={settings.personalInfo.bio}
-                      onChange={(e) =>
-                        handleSettingChange('personalInfo', 'bio', e.target.value)
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="profileVisibility">Profile Visibility</Label>
-                    <Select
-                      value={settings.personalInfo.profileVisibility}
-                      onValueChange={(value) =>
-                        handleSettingChange('personalInfo', 'profileVisibility', value)
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="public">Public</SelectItem>
-                        <SelectItem value="contacts-only">Contacts Only</SelectItem>
-                        <SelectItem value="private">Private</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <CardContent>
+                  <PersonalInformation />
                 </CardContent>
               </Card>
             </TabsContent>

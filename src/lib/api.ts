@@ -1,7 +1,6 @@
-import { supabase } from '@/integrations/supabase/client';
-import { Database } from '@/types/supabase';
-import { Chat, Message, ChatMember } from '@/types/chat';
-import { User } from '@supabase/supabase-js';
+import type { Chat, Message } from '@/types/chat';
+import type { Database } from '@/types/supabase';
+import { supabase } from '@/lib/supabase';
 
 export class ChatAPI {
   // User Management
@@ -39,7 +38,7 @@ export class ChatAPI {
         .insert(
           chat.chat_members.map(member => ({
             chat_id: chatData.id,
-            user_id: member.user_id,
+            profile_id: member.profile_id,
             joined_at: new Date().toISOString()
           }))
         );
@@ -50,36 +49,76 @@ export class ChatAPI {
     return chatData;
   }
 
-  static async getChatsByUserId(userId: string) {
-    const { data, error } = await supabase
-      .from('chat_members')
-      .select(`
-        chat_id,
-        chats (
-          id,
-          name,
-          is_group,
-          created_by,
-          created_at,
-          last_message,
-          last_message_time,
-          pinned,
-          updated_at,
-          chat_members (
-            user_id,
-            joined_at,
-            last_read_time,
-            profiles (
-              username,
-              avatar_url
+  static async getChatsByUserId(userId: string): Promise<Chat[]> {
+    try {
+      const { data: chatMembers, error } = await supabase
+        .from('chat_members')
+        .select(`
+          chat_id,
+          profile_id,
+          joined_at,
+          profiles!chat_members_profile_id_fkey (
+            id,
+            display_name,
+            avatar_url
+          ),
+          chats!chat_members_chat_id_fkey (
+            id,
+            name,
+            is_group,
+            created_by,
+            created_at,
+            last_message,
+            last_message_time,
+            pinned,
+            updated_at,
+            chat_members (
+              chat_id,
+              profile_id,
+              joined_at,
+              profiles (
+                id,
+                display_name,
+                avatar_url
+              )
             )
           )
-        )
-      `)
-      .eq('user_id', userId);
+        `)
+        .eq('profile_id', userId);
 
-    if (error) throw error;
-    return data;
+      if (error) throw error;
+
+      // Transform the response to match our Chat type
+      return (chatMembers || []).map(member => {
+        const chat = member.chats[0];
+        return {
+          id: chat.id,
+          name: chat.name,
+          is_group: chat.is_group,
+          created_by: chat.created_by,
+          created_at: chat.created_at,
+          last_message: chat.last_message || '',
+          last_message_time: chat.last_message_time || '',
+          pinned: chat.pinned,
+          updated_at: chat.updated_at,
+          unread_count: 0, // This should be calculated separately
+          unread: false, // This should be calculated separately
+          chat_members: chat.chat_members.map((chatMember: any) => ({
+            chat_id: chatMember.chat_id,
+            profile_id: chatMember.profile_id,
+            joined_at: chatMember.joined_at,
+            profiles: {
+              id: chatMember.profiles.id,
+              display_name: chatMember.profiles.display_name,
+              avatar_url: chatMember.profiles.avatar_url ?? null
+            }
+          }))
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching chats:', error);
+      throw error;
+    }
   }
 
   // Message Management
@@ -100,13 +139,14 @@ export class ChatAPI {
     return data;
   }
 
-  static async getChatMessages(chatId: string, limit = 50, before?: string) {
+  static async getChatMessages(chatId: string, limit = 50, before?: string): Promise<Message[]> {
     const query = supabase
       .from('messages')
       .select(`
         *,
-        sender:profiles!sender_id (
-          username,
+        profiles:sender_profiles(
+          id,
+          display_name,
           avatar_url
         )
       `)
@@ -118,9 +158,20 @@ export class ChatAPI {
       query.lt('created_at', before);
     }
 
-    const { data, error } = await query;
+    const { data: messages, error } = await query;
+
     if (error) throw error;
-    return data;
+    
+    // Transform the database response to match the Message type
+    return (messages || []).map(msg => ({
+      ...msg,
+      // Extract the first profile from the array and ensure it matches Profile type
+      profiles: msg.profiles && msg.profiles[0] ? {
+        id: msg.profiles[0].id,
+        display_name: msg.profiles[0].display_name,
+        avatar_url: msg.profiles[0].avatar_url
+      } : null
+    })) as Message[];
   }
 
   // Real-time subscriptions
