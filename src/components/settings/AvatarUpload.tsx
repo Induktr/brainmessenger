@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Upload } from "lucide-react";
 import { storageService } from "@/services/storage";

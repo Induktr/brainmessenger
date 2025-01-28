@@ -11,43 +11,59 @@ export interface Database {
     Tables: {
       profiles: {
         Row: {
-          id: string
-          email: string | null
-          username: string
-          display_name: string
+          visibility: "public" | "private"
           bio: string
-          visibility: 'public' | 'private'
+          email: string
           avatar_url: string | null
-          updated_at: string
+          id: string
+          updated_at: string | null
+          username: string | null
+          display_name: string | null
         }
         Insert: {
-          id: string
-          email?: string | null
-          username: string
-          display_name: string
+          visibility?: "public" | "private"
           bio?: string
-          visibility?: 'public' | 'private'
+          email?: string
           avatar_url?: string | null
-          updated_at?: string
+          id: string
+          updated_at?: string | null
+          username?: string | null
+          display_name?: string | null
         }
         Update: {
-          id?: string
-          email?: string | null
-          username?: string
-          display_name?: string
+          visibility?: "public" | "private"
           bio?: string
-          visibility?: 'public' | 'private'
+          email?: string
           avatar_url?: string | null
-          updated_at?: string
+          id?: string
+          updated_at?: string | null
+          username?: string | null
+          display_name?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "profiles_id_fkey"
             columns: ["id"]
-            referencedRelation: "users"
+            isOneToOne: true
+            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           }
         ]
+      }
+      chats: {
+        Row: {
+          id: string;
+          name: string;
+          is_group: boolean;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+          last_message: string | null;
+          last_message_time: string | null;
+          pinned: boolean;
+        };
+        Insert: Omit<Database['public']['Tables']['chats']['Row'], 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Database['public']['Tables']['chats']['Row']>;
       }
       messages: {
         Row: {
@@ -90,7 +106,7 @@ export interface Database {
           {
             foreignKeyName: "messages_sender_id_fkey"
             columns: ["sender_id"]
-            referencedRelation: "users"
+            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           }
         ]
@@ -121,7 +137,7 @@ export interface Database {
           {
             foreignKeyName: "chat_members_user_id_fkey"
             columns: ["user_id"]
-            referencedRelation: "profiles"
+            referencedRelation: "auth.users"
             referencedColumns: ["id"]
           }
         ]
@@ -141,9 +157,104 @@ export interface Database {
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
   }
+  auth: {
+    Tables: {
+      users: {
+        Row: {
+          id: string
+          email?: string
+          created_at: string
+          updated_at: string | null
+          deleted_at: string | null
+          raw_app_meta_data: Json
+          raw_user_meta_data: Json
+          is_super_admin: boolean
+          role: string
+          email_confirmed_at: string | null
+          phone_confirmed_at: string | null
+          confirmation_sent_at: string | null
+          recovery_sent_at: string | null
+          email_change_sent_at: string | null
+          new_email: string | null
+          invited_at: string | null
+          action_link: string | null
+          phone: string | null
+          confirmation_token: string | null
+          recovery_token: string | null
+          email_change_token_new: string | null
+          email_change_token_current: string | null
+          last_sign_in_at: string | null
+          raw_confirmation_token: string | null
+          raw_recovery_token: string | null
+          raw_email_change_token_new: string | null
+          raw_email_change_token_current: string | null
+        }
+        Insert: {
+          id?: string
+          email?: string
+          created_at?: string
+          updated_at?: string | null
+          deleted_at?: string | null
+          raw_app_meta_data?: Json
+          raw_user_meta_data?: Json
+          is_super_admin?: boolean
+          role?: string
+          email_confirmed_at?: string | null
+          phone_confirmed_at?: string | null
+          confirmation_sent_at?: string | null
+          recovery_sent_at?: string | null
+          email_change_sent_at?: string | null
+          new_email?: string | null
+          invited_at?: string | null
+          action_link?: string | null
+          phone?: string | null
+          confirmation_token?: string | null
+          recovery_token?: string | null
+          email_change_token_new?: string | null
+          email_change_token_current?: string | null
+          last_sign_in_at?: string | null
+          raw_confirmation_token?: string | null
+          raw_recovery_token?: string | null
+          raw_email_change_token_new?: string | null
+          raw_email_change_token_current?: string | null
+        }
+        Update: {
+          id?: string
+          email?: string
+          created_at?: string
+          updated_at?: string | null
+          deleted_at?: string | null
+          raw_app_meta_data?: Json
+          raw_user_meta_data?: Json
+          is_super_admin?: boolean
+          role?: string
+          email_confirmed_at?: string | null
+          phone_confirmed_at?: string | null
+          confirmation_sent_at?: string | null
+          recovery_sent_at?: string | null
+          email_change_sent_at?: string | null
+          new_email?: string | null
+          invited_at?: string | null
+          action_link?: string | null
+          phone?: string | null
+          confirmation_token?: string | null
+          recovery_token?: string | null
+          email_change_token_new?: string | null
+          email_change_token_current?: string | null
+          last_sign_in_at?: string | null
+          raw_confirmation_token?: string | null
+          raw_recovery_token?: string | null
+          raw_email_change_token_new?: string | null
+          raw_email_change_token_current?: string | null
+        }
+      }
+    }
+  }
 }
 
 // Helper type for RPC functions
 export type RPCFunctions = Database['public']['Functions']
 export type RPCArgs<T extends keyof RPCFunctions> = RPCFunctions[T]['Args']
 export type RPCReturns<T extends keyof RPCFunctions> = RPCFunctions[T]['Returns']
+
+export type Profile = Database['public']['Tables']['profiles']['Row'];

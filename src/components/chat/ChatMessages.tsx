@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Message } from '@/types/chat';
 import { User } from '@supabase/supabase-js';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import { Smile, Image as ImageIcon } from 'lucide-react';
+import { Smile } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ChatMessagesProps {
@@ -24,16 +24,30 @@ export const ChatMessages = ({
   typingUsers,
   onlineUsers
 }: ChatMessagesProps) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [reactionMessage, setReactionMessage] = useState<string | null>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
+  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  
+  const rowVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 100,
+    overscan: 5,
+  });
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (shouldScrollToBottom && parentRef.current) {
+      parentRef.current.scrollTop = parentRef.current.scrollHeight;
+      setShouldScrollToBottom(false);
     }
-  }, [messages]);
+  }, [messages, shouldScrollToBottom]);
 
-  const renderMessageContent = (message: Message) => {
+  const handleScroll = useCallback(() => {
+    if (!parentRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = parentRef.current;
+    setShouldScrollToBottom(scrollHeight - scrollTop === clientHeight);
+  }, []);
+
+  const renderMessageContent = useCallback((message: Message) => {
     switch (message.type) {
       case 'image':
         return (
@@ -41,6 +55,7 @@ export const ChatMessages = ({
             src={message.content} 
             alt="Message attachment" 
             className="max-w-[300px] rounded-lg"
+            loading="lazy"
           />
         );
       case 'video':
@@ -49,6 +64,7 @@ export const ChatMessages = ({
             src={message.content} 
             controls 
             className="max-w-[300px] rounded-lg"
+            preload="none"
           />
         );
       case 'audio':
@@ -57,14 +73,15 @@ export const ChatMessages = ({
             src={message.content} 
             controls 
             className="max-w-[300px]"
+            preload="none"
           />
         );
       default:
         return <p className="text-sm">{message.content}</p>;
     }
-  };
+  }, []);
 
-  const renderReactions = (message: Message) => {
+  const renderReactions = useCallback((message: Message) => {
     if (!message.reactions) return null;
     
     const reactions = message.reactions as Record<string, string[]>;
@@ -84,17 +101,36 @@ export const ChatMessages = ({
         ))}
       </div>
     );
-  };
+  }, [onReaction]);
 
   return (
-    <ScrollArea ref={scrollRef} className={cn("flex-1 p-4", className)}>
-      <div className="space-y-4">
-        {messages.map((message) => {
+    <div 
+      ref={parentRef} 
+      onScroll={handleScroll}
+      className={cn("flex-1 p-4 overflow-auto", className)}
+    >
+      <div
+        style={{
+          height: `${rowVirtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const message = messages[virtualRow.index];
           const isOwn = message.sender_id === currentUser.id;
           
           return (
             <div
               key={message.id}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
               className={cn(
                 "flex flex-col",
                 isOwn ? "items-end" : "items-start"
@@ -125,18 +161,18 @@ export const ChatMessages = ({
             </div>
           );
         })}
-        {Object.keys(typingUsers).length > 0 && (
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-sm text-muted-foreground animate-pulse">
-              {Object.keys(typingUsers)
-                .filter(id => id !== currentUser.id)
-                .map(id => onlineUsers.has(id) ? id : null)
-                .filter(Boolean)
-                .join(", ")} {Object.keys(typingUsers).length === 1 ? "is" : "are"} typing...
-            </span>
-          </div>
-        )}
       </div>
-    </ScrollArea>
+      {Object.keys(typingUsers).length > 0 && (
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-sm text-muted-foreground animate-pulse">
+            {Object.keys(typingUsers)
+              .filter(id => id !== currentUser.id)
+              .map(id => onlineUsers.has(id) ? id : null)
+              .filter(Boolean)
+              .join(", ")} {Object.keys(typingUsers).length === 1 ? "is" : "are"} typing...
+          </span>
+        </div>
+      )}
+    </div>
   );
 };

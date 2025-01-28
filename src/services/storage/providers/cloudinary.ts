@@ -11,7 +11,8 @@ export class CloudinaryStorageProvider implements StorageProvider {
 
   async uploadImage(
     file: File,
-    path: string,
+    // path parameter required by StorageProvider interface but not used by Cloudinary
+    _path: string,
     options: ImageUploadOptions = {}
   ): Promise<ImageUploadResult> {
     try {

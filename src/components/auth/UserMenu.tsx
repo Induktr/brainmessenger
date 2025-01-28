@@ -1,61 +1,68 @@
-import { useState, lazy, Suspense } from "react";
+import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/hooks/useProfile";
+import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
-
-// Lazy load the icon
-const LogOutIcon = lazy(() => import("lucide-react").then(mod => ({ 
-  default: mod.LogOut 
-})));
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 
 interface UserMenuProps {
   asDropdownItems?: boolean;
-  className?: string;
 }
 
-export const UserMenu = ({ asDropdownItems, className }: UserMenuProps = {}) => {
-  const { user, logout } = useAuth();
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
+export const UserMenu = ({ asDropdownItems }: UserMenuProps = {}) => {
+  const { user, logout: signOut } = useAuth();
+  const { profile, loading } = useProfile();
+  const [isOpen, setIsOpen] = useState(false);
 
-  if (!user) return null;
-
-  const handleLogout = async () => {
-    if (isLoggingOut) return;
-    
-    try {
-      setIsLoggingOut(true);
-      await logout();
-    } catch (error) {
-      console.error('Failed to logout:', error);
-      setIsLoggingOut(false);
-    }
-  };
+  if (!user || loading) return null;
 
   if (asDropdownItems) {
     return (
-      <DropdownMenuItem 
-        onClick={handleLogout} 
-        disabled={isLoggingOut}
-        className={cn(
-          "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-          "transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-          className
-        )}
-      >
-        <Suspense fallback={<div className="h-4 w-4 mr-2 opacity-50" />}>
-          <LogOutIcon className="h-4 w-4 mr-2" />
-        </Suspense>
-        <span>Logout</span>
-      </DropdownMenuItem>
+      <DropdownMenuContent className="w-56" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">
+              {profile?.username || user.email?.split('@')[0]}
+            </p>
+            <p className="text-xs leading-none text-muted-foreground">
+              {user.email}
+            </p>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => signOut()}>
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
     );
   }
 
-  return null;
+  return (
+    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+      <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+        <Avatar className="h-8 w-8">
+          <AvatarImage
+            src={profile?.avatar_url || undefined}
+            alt={profile?.username || user.email || 'User avatar'}
+          />
+        </Avatar>
+      </Button>
+      <DropdownMenuContent className="w-56" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">
+              {profile?.username || user.email?.split('@')[0]}
+            </p>
+            <p className="text-xs leading-none text-muted-foreground">
+              {user.email}
+            </p>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => signOut()}>
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 };

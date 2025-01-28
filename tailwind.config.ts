@@ -19,40 +19,33 @@ export default {
     },
     extend: {
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        // Light mode colors
         primary: {
-          DEFAULT: "#22c55e",
-          foreground: "#ffffff",
-          hover: "#16a34a",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
+          DEFAULT: "#1ED94F",
+          secondary: "#96C93D",
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+          warning: "#F2F047",
+          action: "#00BFFF",
+          error: "#FF6347",
         },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+        neutral: {
+          background: "#FFFFFF",
+          surface: "#F0F0F0",
+          border: "#E8E8D9",
+          textPrimary: "#333333",
+          textSecondary: "#4D4D4D",
         },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
+        // Dark mode specific colors
+        dark: {
+          primary: "#96C93D",
+          secondary: "#1ED94F",
+          background: "#333333",
+          surface: "#4D4D4D",
+          border: "#B0B0B0",
+          textPrimary: "#FFFFFF",
+          textSecondary: "#D9E8D9",
+        }
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -86,4 +79,3 @@ export default {
     },
   },
   plugins: [require("tailwindcss-animate")],
-} satisfies Config;

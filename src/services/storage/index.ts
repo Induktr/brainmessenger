@@ -1,6 +1,6 @@
 import { StorageProvider } from "./types";
 import { SupabaseStorageProvider } from "./providers/supabase";
-import { CloudinaryStorageProvider } from "./providers/cloudinary";
+// import { CloudinaryStorageProvider } from "./providers/cloudinary";
 
 // Default configuration
 const DEFAULT_OPTIONS = {

@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase";
 import { StorageProvider, ImageUploadOptions, ImageUploadResult } from "../types";
 import imageCompression from "browser-image-compression";
 
@@ -134,7 +134,7 @@ export class SupabaseStorageProvider implements StorageProvider {
 
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-          const { error: uploadError, data } = await supabase.storage
+          const { error: uploadError } = await supabase.storage
             .from(this.bucket)
             .upload(path, compressedFile, {
               cacheControl: "3600",
