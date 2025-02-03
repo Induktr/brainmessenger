@@ -41,3 +41,9 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'de', name: 'German', nativeName: 'Deutsch' },
   { code: 'ru', name: 'Russian', nativeName: 'Русский' },
 ];
+
+export type SettingsStore = {
+  // ... other properties
+  lastUpdateTime?: string; // Or Date, or whatever type is appropriate
+  // ...
+};
