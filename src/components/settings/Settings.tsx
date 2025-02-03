@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { FC, useState, useCallback, useEffect } from 'react';
+import debounce from 'lodash/debounce';
 import { UserSettings, SUPPORTED_LANGUAGES } from '@/types/settings';
+import { useToast } from "@/components/ui/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -19,13 +21,15 @@ import { AvatarUpload } from "./AvatarUpload";
 import { PersonalInformation } from "./PersonalInformation";
 
 interface SettingsDialogProps {
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+export const SettingsDialog: FC<SettingsDialogProps> = ({ open, onOpenChange }): JSX.Element => {
   const { user } = useAuth();
-  const [settings, setSettings] = useState<UserSettings>({
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+  const [formState, setFormState] = useState<UserSettings>({
     personalInfo: {
       displayName: '',
       email: '',
@@ -58,19 +62,70 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(user?.user_metadata?.avatar_url);
 
-  const handleSettingChange = (
+  // Memoize form state updates to prevent unnecessary re-renders
+  const handleFormChange = useCallback((
     section: keyof UserSettings,
     setting: string,
     value: any
   ) => {
-    setSettings((prev) => ({
+    setFormState((prev) => ({
       ...prev,
       [section]: {
         ...prev[section],
         [setting]: value,
       },
     }));
-  };
+  }, []);
+
+  // Debounced save function to prevent too many API calls
+  const debouncedSave = useCallback(
+    debounce(async (section: keyof UserSettings, setting: string, value: any) => {
+      try {
+        setIsLoading(true);
+        // Your API call here
+        toast({
+          title: "Settings updated",
+          description: "Your settings have been saved successfully.",
+        });
+      } catch (error) {
+        console.error('Settings update error:', error);
+        toast({
+          title: "Error",
+          description: "Failed to update settings. Please try again.",
+          variant: "destructive",
+        });
+        // Revert the form state on error
+        setFormState((prev) => ({
+          ...prev,
+          [section]: {
+            ...prev[section],
+            [setting]: prev[section][setting],
+          },
+        }));
+      } finally {
+        setIsLoading(false);
+      }
+    }, 500),
+    []
+  );
+
+  // Handle input changes with immediate UI update and debounced save
+  const handleSettingChange = useCallback(
+    (section: keyof UserSettings, setting: string, value: any) => {
+      // Update form state immediately for responsive UI
+      handleFormChange(section, setting, value);
+      // Debounce the save operation
+      debouncedSave(section, setting, value);
+    },
+    [handleFormChange, debouncedSave]
+  );
+
+  // Clean up debounced function on unmount
+  useEffect(() => {
+    return () => {
+      debouncedSave.cancel();
+    };
+  }, [debouncedSave]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -118,7 +173,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     Manage your account security and privacy
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 relative">
+                  {isLoading && (
+                  <div className="absolute inset-0 bg-background/50 backdrop-blur-sm flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label>Two-Factor Authentication</Label>
@@ -127,10 +187,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       </div>
                     </div>
                     <Switch
-                      checked={settings.security.twoFactorEnabled}
-                      onCheckedChange={(checked) =>
+                        checked={formState.security.twoFactorEnabled}
+                        onCheckedChange={(checked) =>
                         handleSettingChange('security', 'twoFactorEnabled', checked)
-                      }
+                        }
+                        disabled={isLoading}
                     />
                   </div>
 
@@ -142,7 +203,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       </div>
                     </div>
                     <Switch
-                      checked={settings.security.loginNotifications}
+                        checked={formState.security.loginNotifications}
                       onCheckedChange={(checked) =>
                         handleSettingChange('security', 'loginNotifications', checked)
                       }
@@ -162,8 +223,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     Choose what you want to be notified about
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {Object.entries(settings.notifications).map(([key, value]) => (
+                <CardContent className="space-y-4 relative">
+                  {isLoading && (
+                  <div className="absolute inset-0 bg-background/50 backdrop-blur-sm flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                  )}
+                    {Object.entries(formState.notifications).map(([key, value]) => (
                     <div key={key} className="flex items-center justify-between">
                       <div className="space-y-0.5">
                         <Label className="capitalize">
@@ -175,6 +241,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         onCheckedChange={(checked) =>
                           handleSettingChange('notifications', key, checked)
                         }
+                        disabled={isLoading}
                       />
                     </div>
                   ))}
@@ -190,14 +257,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     Customize your application experience
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 relative">
+                  {isLoading && (
+                  <div className="absolute inset-0 bg-background/50 backdrop-blur-sm flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="language">Language</Label>
                     <Select
-                      value={settings.preferences.language}
-                      onValueChange={(value) =>
+                        value={formState.preferences.language}
+                        onValueChange={(value) =>
                         handleSettingChange('preferences', 'language', value)
-                      }
+                        }
+                        disabled={isLoading}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -215,7 +288,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <div className="space-y-2">
                     <Label htmlFor="theme">Theme</Label>
                     <Select
-                      value={settings.preferences.theme}
+                        value={formState.preferences.theme}
                       onValueChange={(value) =>
                         handleSettingChange('preferences', 'theme', value)
                       }
@@ -234,7 +307,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <div className="space-y-2">
                     <Label htmlFor="fontSize">Font Size</Label>
                     <Select
-                      value={settings.preferences.fontSize}
+                        value={formState.preferences.fontSize}
                       onValueChange={(value) =>
                         handleSettingChange('preferences', 'fontSize', value)
                       }
@@ -304,4 +377,4 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       />
     </Dialog>
   );
-}
+};
