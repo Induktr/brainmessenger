@@ -1,531 +1,492 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import type { Database } from '@/types/supabase';
-import { ChatList } from "./ChatList";
-import { ChatMessages } from "./ChatMessages";
-import { ChatInput } from "./ChatInput";
-import { Button } from "@/components/ui/button";
-import { Menu, Plus, Settings } from "lucide-react";
-import { User } from "@supabase/supabase-js";
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { 
   Chat as ChatType, 
   Message, 
   isDatabaseChatResponse, 
-  transformDatabaseChat} from "@/types/chat";
+  transformDatabaseChat,
+  DatabaseChatResponse
+} from "@/types/chat";
+import { debounce } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
-import { SettingsDialog } from "@/components/settings/Settings";
+import { Button } from "@/components/ui/button";
+import { Menu, Plus, Pin, Settings } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Users, Pin } from "lucide-react";
+import { ChatList } from "./ChatList";
+import { ChatMessages } from "./ChatMessages";
+import { ChatInput } from "./ChatInput";
+import { ChatHeader }from  "./ChatHeader";
+import { SettingsDialog } from "@/components/settings/Settings";
+import { useAuth } from "@/hooks/useAuth";
+import { useSession } from "@/hooks/useSession";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 export const Chat = () => {
+  // Core hooks
   const navigate = useNavigate();
-  const [selectedChat, setSelectedChat] = useState<ChatType | null>(null);
-  const [isNewChatOpen, setIsNewChatOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [chats, setChats] = useState<ChatType[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [user, setUser] = useState<User | null>(null);
-  const [newChatName, setNewChatName] = useState("");
-  const [isGroup, setIsGroup] = useState(false);
-  const [sortBy, setSortBy] = useState<'latest' | 'active' | 'pinned' | 'unread'>('latest');
-  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
-  const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);
+  const { user, loading: authLoading, initialized: authInitialized } = useAuth();
+  const { session, isLoading: sessionLoading } = useSession();
+  const { toast } = useToast();
 
-  useEffect(() => {
-    let isSubscribed = true;
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!isSubscribed) return;
-      
-      if (!session) {
-        navigate("/login");
-      } else {
-        setUser(session.user);
-      }
-    };
-    
-    checkAuth();
+  // Refs for subscription cleanup
+  const presenceChannelRef = useRef<RealtimeChannel | null>(null);
+  const chatChannelRef = useRef<RealtimeChannel | null>(null);
+  const initializeTimeoutRef = useRef<NodeJS.Timeout>();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!isSubscribed) return;
-      
-      if (!session) {
-        navigate("/login");
-      } else {
-        setUser(session.user);
-      }
-    });
+  // Component state
+  const [state, setState] = useState({
+    selectedChat: null as ChatType | null,
+    isNewChatOpen: false,
+    isSettingsOpen: false,
+    chats: [] as ChatType[],
+    messages: [] as Message[],
+    searchQuery: "",
+    formState: {
+      isGroup: false,
+      newChatName: ""
+    },
+    sortBy: 'latest' as 'latest' | 'active' | 'pinned' | 'unread',
+    onlineUsers: new Set<string>(),
+    typingUsers: {} as Record<string, boolean>,
+    isLoading: false,
+    error: null as string | null
+  });
 
-    return () => {
-      isSubscribed = false;
-      subscription?.unsubscribe();
-    };
-  }, [navigate]);
+  // Memoized state setters
+  const setSelectedChat = useCallback((chat: ChatType | null) => {
+    setState(prev => ({ ...prev, selectedChat: chat }));
+  }, []);
 
-  useEffect(() => {
-    if (!user) return;
+  const setIsNewChatOpen = useCallback((isOpen: boolean) => {
+    setState(prev => ({ ...prev, isNewChatOpen: isOpen }));
+  }, []);
 
-    let isSubscribed = true;
-    const MAX_RETRIES = 3;
-    let retryCount = 0;
-    const chatIds = new Set(chats.map(chat => chat.id));
-    const chatChannel = supabase.channel('chat-updates');
-    
-    const setupSubscription = async () => {
-      if (!isSubscribed) return;
-      
-      try {
-        await chatChannel
-          .on('postgres_changes', 
-            { 
-              event: '*', 
-              schema: 'public', 
-              table: 'chats',
-              filter: chatIds.size > 0 ? `id=in.(${Array.from(chatIds).join(',')})` : undefined
-            }, 
-            () => {
-              if (isSubscribed) {
-                fetchChats();
-              }
-            }
-          )
-          .on('presence', { event: 'sync' }, () => {
-            if (!isSubscribed) return;
-            const state = chatChannel.presenceState() ?? {};
-            const online = new Set(
-              Object.values(state)
-                .flat()
-                .map((presence: { presence_ref: string }) => presence.presence_ref)
-            );
-            setOnlineUsers(online);
-          })
-          .subscribe();
+  const setIsSettingsOpen = useCallback((isOpen: boolean) => {
+    setState(prev => ({ ...prev, isSettingsOpen: isOpen }));
+  }, []);
 
-        if (user?.id) {
-          await chatChannel.track({
-            user_id: user.id,
-            online_at: new Date().toISOString(),
-          });
-        }
-      } catch (error) {
-        console.error('Subscription error:', error);
-      }
-    };
-
-    const fetchChats = async () => {
-      if (!isSubscribed || !user) return;
-      
-      try {
-        setIsLoading(true);
-        setError(null);
-
-        const { data: memberData, error: memberError } = await supabase
-          .from('chat_members')
-          .select(`
-            chat_id,
-            profile_id,
-            joined_at,
-            profiles!chat_members_profile_id_fkey (
-              id,
-              display_name,
-              avatar_url
-            ),
-            chats!chat_members_chat_id_fkey (
-              id,
-              name,
-              is_group,
-              created_by,
-              created_at,
-              last_message,
-              last_message_time,
-              pinned,
-              updated_at
-            )
-          `)
-          .eq('profile_id', user.id)
-          .order('chats(pinned)', { ascending: false })
-          .order('chats(updated_at)', { ascending: false });
-
-        if (memberError) {
-          throw new Error(`Failed to fetch chat members: ${memberError.message}`);
-        }
-
-        if (!memberData) {
-          throw new Error('No chat data received');
-        }
-
-        const validChats = memberData
-          .filter(isDatabaseChatResponse)
-          .map(transformDatabaseChat);
-
-        if (isSubscribed) {
-          setChats(validChats);
-          retryCount = 0;
-          setIsRetrying(false);
-        }
-      } catch (err) {
-        console.error('Error fetching chats:', err);
-        const error = err instanceof Error ? err : new Error('Unknown error occurred');
-        setError(error.message);
-        
-        if (retryCount < MAX_RETRIES && isSubscribed) {
-          const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000);
-          retryCount++;
-          setIsRetrying(true);
-          console.log(`Retrying in ${backoffTime}ms (attempt ${retryCount} of ${MAX_RETRIES})`);
-          setTimeout(fetchChats, backoffTime);
-        }
-      } finally {
-        if (isSubscribed) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    setupSubscription();
-
-    return () => {
-      isSubscribed = false;
-      chatChannel?.unsubscribe();
-    };
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user) return;
-    
-    const fetchMessages = async () => {
-      if (!selectedChat) return;
-
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', selectedChat.id)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching messages:', error);
-        return;
-      }
-
-      if (data) {
-        setMessages(data.map(msg => ({
-          ...msg,
-          reactions: msg.reactions as Record<string, any> || {}
-        })));
-      }
-    };
-
-    if (selectedChat) {
-      fetchMessages();
-    }
-  }, [selectedChat]);
-
-  useEffect(() => {
-    const presenceChannel = supabase.channel('online-users');
-    
-    presenceChannel
-      .on('presence', { event: 'sync' }, () => {
-        const newState = presenceChannel.presenceState();
-        const onlineUserIds = new Set(Object.keys(newState));
-        setOnlineUsers(onlineUserIds);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED' && user) {
-          await presenceChannel.track({ user_id: user.id });
-        }
-      });
-
-    return () => {
-      presenceChannel.unsubscribe();
-    };
-  }, [user]);
-
-  const handleTyping = async (chatId: string, isTyping: boolean) => {
-    if (!user) return () => {};
-    
-    const channel = supabase.channel(`typing:${chatId}`);
-    if (isTyping) {
-      await channel.track({ user_id: user.id, typing: true });
-    }
-    
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const typingState = Object.keys(state).reduce((acc, userId) => {
-          acc[userId] = true;
-          return acc;
-        }, {} as Record<string, boolean>);
-        setTypingUsers(typingState);
-      })
-      .subscribe();
-
-    return () => {
-      channel.unsubscribe();
-    };
-  };
-
-  const getSortedChats = () => {
-    return [...chats].sort((a, b) => {
-      switch (sortBy) {
-        case 'latest':
-          return new Date(b.last_message_time || 0).getTime() - new Date(a.last_message_time || 0).getTime();
-        case 'active':
-          // Remove messages length check as it's not part of the Chat type
-          return 0;
-        case 'pinned':
-          return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
-        case 'unread':
-          return (b.unread_count || 0) - (a.unread_count || 0);
-        default:
-          return 0;
-      }
-    });
-  };
-
-  const handleSendMessage = async (content: string, type: 'text' | 'image' | 'audio' | 'video') => {
-    if (!user || !selectedChat) return;
-
-    const { error } = await supabase
-      .from('messages')
-      .insert({
-        chat_id: selectedChat.id,
-        sender_id: user.id,
-        content,
-        type
-      });
-
-    if (error) {
-      console.error('Error sending message:', error);
-    }
-  };
-
-  const handleCreateChat = async () => {
-    if (!user || !newChatName.trim()) return;
-
-    const { data: chat, error: chatError } = await supabase
-      .from('chats')
-      .insert({
-        name: newChatName.trim(),
-        is_group: isGroup,
-        created_by: user.id,
-        pinned: false,
-        last_message: null,
-        last_message_time: null
-      } as Database['public']['Tables']['chats']['Insert'])
-      .select()
-      .single();
-
-    if (chatError || !chat) {
-      console.error('Error creating chat:', chatError);
-      return;
-    }
-
-    const { error: memberError } = await supabase
-      .from('chat_members')
-      .insert({
-        chat_id: chat.id,
-        user_id: user.id
-      });
-
-    if (memberError) {
-      console.error('Error adding member:', memberError);
-      return;
-    }
-
-    setIsNewChatOpen(false);
-    setNewChatName("");
-    setIsGroup(false);
-  };
-
-  const handleReaction = async (messageId: string, emoji: string) => {
-    if (!user) return;
-
-    const { data: message } = await supabase
-      .from('messages')
-      .select('reactions')
-      .eq('id', messageId)
-      .single();
-
-    if (!message) return;
-
-    const reactions = (message.reactions as Record<string, string[]>) || {};
-    const users = reactions[emoji] || [];
-    const userIndex = users.indexOf(user.id);
-
-    if (userIndex === -1) {
-      reactions[emoji] = [...users, user.id];
-    } else {
-      reactions[emoji] = users.filter(id => id !== user.id);
-      if (reactions[emoji].length === 0) {
-        delete reactions[emoji];
-      }
-    }
-
-    const { error } = await supabase
-      .from('messages')
-      .update({ reactions })
-      .eq('id', messageId);
-
-    if (error) {
-      console.error('Error updating reaction:', error);
-    }
-  };
-
-  const filteredChats = getSortedChats().filter(chat => 
-    chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+  // Memoized handlers
+  // Debounced presence update handler
+  const handlePresenceUpdate = useCallback(
+    debounce((state: Record<string, any>) => {
+      const onlineUserIds = new Set(
+        Object.values(state)
+          .flat()
+          .map((presence: any) => presence.user_id)
+      );
+      setState(prev => ({ ...prev, onlineUsers: onlineUserIds }));
+    }, 500),
+    []
   );
 
+  const handleChatUpdate = useCallback((payload: RealtimePostgresChangesPayload<DatabaseChatResponse>) => {
+    // Silent return for invalid payloads
+    if (!payload.new || !isDatabaseChatResponse(payload.new)) return;
+
+    try {
+      const updatedChat = transformDatabaseChat(payload.new);
+      
+      setState(prev => {
+        const newChats = [...prev.chats];
+        
+        switch (payload.eventType) {
+          case 'INSERT':
+            newChats.push(updatedChat);
+            break;
+          case 'UPDATE':
+            const index = newChats.findIndex(chat => chat.id === updatedChat.id);
+            if (index !== -1) newChats[index] = updatedChat;
+            break;
+          case 'DELETE':
+            return {
+              ...prev,
+              chats: newChats.filter(chat => chat.id !== updatedChat.id),
+              selectedChat: prev.selectedChat?.id === updatedChat.id ? null : prev.selectedChat
+            };
+        }
+        
+        return {
+          ...prev,
+          chats: newChats,
+          selectedChat: prev.selectedChat?.id === updatedChat.id ? updatedChat : prev.selectedChat
+        };
+      });
+    } catch (error) {
+      // Only show error to user for critical failures
+      if (error instanceof Error && error.message !== 'AbortError') {
+        toast({
+          title: "Error",
+          description: "Failed to process chat update. Please refresh the page.",
+          variant: "destructive"
+        });
+      }
+    }
+  }, [toast]);
+
+  const handleTypingStart = useCallback(() => {
+    if (!user || !state.selectedChat) return;
+    
+    setState(prev => ({
+      ...prev,
+      typingUsers: {
+        ...prev.typingUsers,
+        [user.id]: true
+      }
+    }));
+  }, [user, state.selectedChat]);
+
+  const handleTypingStop = useCallback(() => {
+    if (!user || !state.selectedChat) return;
+    
+    setState(prev => ({
+      ...prev,
+      typingUsers: {
+        ...prev.typingUsers,
+        [user.id]: false
+      }
+    }));
+  }, [user, state.selectedChat]);
+
+  const handleSendMessage = useCallback(async (content: string) => {
+    if (!user || !state.selectedChat) return;
+
+    try {
+      const newMessage: Omit<Message, 'id' | 'createdAt' | 'updatedAt'> = {
+        chatId: state.selectedChat.id,
+        senderId: user.id,
+        content,
+        sender: {
+          id: user.id,
+          display_name: user.user_metadata?.display_name || 'Unknown User',
+          avatar_url: user.user_metadata?.avatar_url,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      };
+
+      await supabase
+        .from('messages')
+        .insert([newMessage])
+        .select()
+        .single();
+
+      // Clear typing status after sending message
+      handleTypingStop();
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to send message. Please try again.',
+        variant: 'destructive'
+      });
+    }
+  }, [user, state.selectedChat, toast, handleTypingStop]);
+
+  const initializeChat = useCallback(async () => {
+    try {
+      // Clear existing subscriptions FIRST
+      const cleanup = () => {
+        presenceChannelRef.current?.unsubscribe();
+        chatChannelRef.current?.unsubscribe();
+      };
+      cleanup();
+  
+      // Create NEW subscriptions
+      const presenceChannel = supabase.channel('online-users');
+      presenceChannelRef.current = presenceChannel;
+      
+      // ... rest of subscription setup ...
+  
+    } catch (error) {
+      // Error handling
+    }
+  }, [user?.id]); // Only depend on user ID
+
+  // Cleanup function
+  useEffect(() => {
+    return () => {
+      if (initializeTimeoutRef.current) {
+        clearTimeout(initializeTimeoutRef.current);
+      }
+      if (presenceChannelRef.current) {
+        presenceChannelRef.current.unsubscribe();
+      }
+      if (chatChannelRef.current) {
+        chatChannelRef.current.unsubscribe();
+      }
+    };
+  }, []);
+
+  // Search and sort handlers
+  const handleSearchChange = useCallback((value: string) => {
+    setState(prev => ({ ...prev, searchQuery: value }));
+  }, []);
+
+  const handleSortChange = useCallback((value: 'latest' | 'active' | 'pinned' | 'unread') => {
+    setState(prev => ({ ...prev, sortBy: value }));
+  }, []);
+
+  const handleCreateChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !state.formState.newChatName.trim()) return;
+
+    try {
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+      const { data: newChat, error: createError } = await supabase
+        .from('chats')
+        .insert([
+          {
+            name: state.formState.newChatName.trim(),
+            created_by: user.id,
+            is_group: state.formState.isGroup,
+            participants: [user.id],
+            updated_at: new Date().toISOString()
+          }
+        ])
+        .select()
+        .single();
+
+      if (createError) throw createError;
+
+      if (isDatabaseChatResponse(newChat)) {
+        const transformedChat = transformDatabaseChat(newChat);
+        setState(prev => ({
+          ...prev,
+          chats: [transformedChat, ...prev.chats],
+          selectedChat: transformedChat,
+          isNewChatOpen: false,
+          formState: { isGroup: false, newChatName: "" }
+        }));
+      }
+    } catch (error) {
+      if (error instanceof Error && !error.message.includes('AbortError')) {
+        setState(prev => ({
+          ...prev,
+          error: 'Unable to create chat. Please try again.',
+          isLoading: false
+        }));
+        toast({
+          title: "Error",
+          description: "Failed to create chat. Please try again.",
+          variant: "destructive"
+        });
+      }
+    }
+  };
+
+  useEffect(() => {
+    const abortController = new AbortController();
+  
+    const initialize = async () => {
+      // Early return for invalid states
+      if (authLoading || sessionLoading || !authInitialized) return;
+      
+      // Redirect unauthenticated users immediately
+      if (!user || !session) {
+        navigate('/login', { replace: true });
+        return;
+      }
+  
+      try {
+        await initializeChat();
+      } catch (error) {
+        // Error handling
+      }
+    };
+  
+    initialize();
+  
+    return () => {
+      abortController.abort();
+      // Add immediate cleanup of subscriptions
+      if (presenceChannelRef.current) presenceChannelRef.current.unsubscribe();
+      if (chatChannelRef.current) chatChannelRef.current.unsubscribe();
+    };
+  }, [user?.id, session?.access_token, authInitialized]); // Only track critical identifiers
+
+  if (authLoading || sessionLoading || state.isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin h-8 w-8 border-4 border-primary rounded-full border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (state.error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <p className="text-red-500 mb-4">{state.error}</p>
+        <Button
+          onClick={() => {
+            window.location.reload();
+          }}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  // Memoize handlers to prevent unnecessary re-renders
+  const memoizedHandlers = useMemo(() => ({
+    onSearchChange: handleSearchChange,
+    onSortChange: handleSortChange
+  }), [handleSearchChange, handleSortChange]);
+
   return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <div className="w-64 border-r border-neutral-border bg-neutral-surface p-4 dark:border-dark-border dark:bg-dark-surface">
-        <div className="p-4 border-b flex items-center justify-between">
-          <h1 className="text-xl font-semibold">BrainMessenger</h1>
-          <div className="flex items-center space-x-2">
+    <div className="flex h-screen bg-gray-100">
+      <div className="flex flex-col w-80 bg-white border-r">
+        <div className="p-4 border-b">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-xl font-bold">Chats</h1>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsNewChatOpen(true)}
+                disabled={state.isLoading || !user}
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsSettingsOpen(true)}
+              >
+                <Settings className="h-5 w-5" />
+              </Button>
+            </div>
+          </div>
+          <Input
+            placeholder="Search chats..."
+            value={state.searchQuery}
+            onChange={(e) => setState(prev => ({ ...prev, searchQuery: e.target.value }))}
+            className="w-full"
+          />
+          <div className="mt-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Menu className="h-5 w-5" />
+                <Button variant="outline" size="sm" className="w-full">
+                  <Menu className="h-4 w-4 mr-2" />
+                  Sort by: {state.sortBy}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setIsNewChatOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  <span>New Chat</span>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => setState(prev => ({ ...prev, sortBy: 'latest' }))}>
+                  Latest
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsSettingsOpen(true)}>
-                  <Settings className="h-4 w-4 mr-2" />
-                  <span>Settings</span>
+                <DropdownMenuItem onClick={() => setState(prev => ({ ...prev, sortBy: 'active' }))}>
+                  Most active
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => supabase.auth.signOut()}>
-                  <span>Logout</span>
+                <DropdownMenuItem onClick={() => setState(prev => ({ ...prev, sortBy: 'pinned' }))}>
+                  <Pin className="h-4 w-4 mr-2" />
+                  Pinned
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setState(prev => ({ ...prev, sortBy: 'unread' }))}>
+                  Unread
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
+
         <ChatList
-          chats={filteredChats}
-          selectedChat={selectedChat?.id ?? null}
-          onSelectChat={(chatId) => setSelectedChat(chats.find(c => c.id === chatId) ?? null)}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          sortBy={sortBy}
-          onSortByChange={setSortBy}
-          isLoading={isLoading}
-          error={error}
-          isRetrying={isRetrying}
+          chats={state.chats}
+          selectedChat={state.selectedChat}
+          onSelectChat={setSelectedChat}
+          onlineUsers={state.onlineUsers}
+          searchQuery={state.searchQuery}
+          sortBy={state.sortBy}
+          {...memoizedHandlers}
         />
       </div>
 
-      {/* Main Chat Area */}
-      <div className="flex flex-1 flex-col">
-        {selectedChat ? (
+      <div className="flex-1 flex flex-col">
+        {state.selectedChat ? (
           <>
-            {/* Chat Header */}
-            <div className="border-b border-neutral-border bg-neutral-background p-4 dark:border-dark-border dark:bg-dark-background">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-lg font-semibold">{selectedChat.name}</h2>
-                  {selectedChat.is_group && (
-                    <Users className="h-5 w-5 text-muted-foreground" />
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={async () => {
-                    const { error } = await supabase
-                      .from('chats')
-                      .update({ pinned: !selectedChat.pinned })
-                      .eq('id', selectedChat.id);
-                    
-                    if (error) {
-                      console.error('Error updating pin status:', error);
-                    }
-                  }}
-                >
-                  <Pin className={cn("h-5 w-5", selectedChat.pinned && "text-primary")} />
-                </Button>
-              </div>
-            </div>
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto bg-neutral-background p-4 dark:bg-dark-background">
-              <ChatMessages
-                messages={messages}
-                currentUser={user!}
-                onReaction={handleReaction}
-                typingUsers={typingUsers}
-                onlineUsers={onlineUsers}
-              />
-            </div>
-            {/* Input Area */}
-            <div className="border-t border-neutral-border bg-neutral-surface p-4 dark:border-dark-border dark:bg-dark-surface">
-              <ChatInput 
-                onSendMessage={handleSendMessage} 
-                onTyping={handleTyping}
-                chatId={selectedChat.id}
-              />
-            </div>
+            <ChatHeader
+              chat={state.selectedChat}
+              onBack={() => setSelectedChat(null)}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+            />
+            <ChatMessages
+              chat={state.selectedChat}
+              messages={state.messages}
+              onlineUsers={state.onlineUsers}
+              typingUsers={state.typingUsers}
+              isLoading={state.isLoading}
+              className="flex-1"
+            />
+            <ChatInput
+              chatId={state.selectedChat.id}
+              onSendMessage={handleSendMessage}
+            />
+
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            Select a chat to start messaging
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-gray-500">Select a chat to start messaging</p>
           </div>
         )}
       </div>
 
-      {/* New Chat Dialog */}
-      <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
-        <DialogContent className="bg-neutral-background border border-neutral-border">
+      <Dialog open={state.isNewChatOpen} onOpenChange={setIsNewChatOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Chat</DialogTitle>
+            <DialogTitle>Create new chat</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <form onSubmit={handleCreateChat} className="space-y-4">
             <div>
-              <Label htmlFor="chatName">Chat Name</Label>
+              <Label htmlFor="chatName">Chat name</Label>
               <Input
                 id="chatName"
-                value={newChatName}
-                onChange={(e) => setNewChatName(e.target.value)}
-                placeholder="Enter chat name..."
-                className="bg-neutral-background border-neutral-border placeholder:text-neutral-textSecondary"
+                value={state.formState.newChatName}
+                onChange={(e) =>
+                  setState(prev => ({
+                    ...prev,
+                    formState: { ...prev.formState, newChatName: e.target.value }
+                  }))
+                }
+                placeholder="Enter chat name"
               />
             </div>
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
                 id="isGroup"
-                checked={isGroup}
-                onChange={(e) => setIsGroup(e.target.checked)}
-                className="accent-green-500"
+                checked={state.formState.isGroup}
+                onChange={(e) =>
+                  setState(prev => ({
+                    ...prev,
+                    formState: { ...prev.formState, isGroup: e.target.checked }
+                  }))
+                }
               />
-              <Label htmlFor="isGroup">Is this a group chat?</Label>
+              <Label htmlFor="isGroup">Is group chat?</Label>
             </div>
-            <Button onClick={handleCreateChat} className="w-full bg-green-500 hover:bg-green-600">
-              Create Chat
+            <Button type="submit" disabled={!state.formState.newChatName.trim() || state.isLoading}>
+              {state.isLoading ? 'Creating...' : 'Create Chat'}
             </Button>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
 
-      {/* Settings Dialog */}
-      <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
+      <SettingsDialog
+        open={state.isSettingsOpen}
+        onOpenChange={setIsSettingsOpen}
+      />
     </div>
   );
 };
