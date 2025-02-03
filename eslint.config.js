@@ -24,6 +24,8 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       "@typescript-eslint/no-unused-vars": "off",
+      "react-hooks/exhaustive-deps": "error",
+      "no-console": ["error", { "allow": ["warn", "error"] }]
     },
   }
 );
