@@ -1,131 +1,184 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Profile } from '@/types/supabase';
-import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
+import { logOnce } from '@/lib/utils';
+import { logger } from '@/lib/logger';
+interface ProfileState {
+  profile: Profile | null;
+  loading: boolean;
+  error: Error | null;
+}
 
-// Type guard for profile validation
-const isValidProfile = (profile: unknown): profile is Profile => {
-  if (!profile || typeof profile !== 'object') return false;
-  const p = profile as Partial<Profile>;
-  return typeof p.id === 'string' &&
-    typeof p.email === 'string' &&
-    (p.username === null || typeof p.username === 'string') &&
-    (p.display_name === null || typeof p.display_name === 'string') &&
-    (p.avatar_url === null || typeof p.avatar_url === 'string') &&
-    (typeof p.bio === 'string' || p.bio === undefined) &&
-    (p.visibility === 'public' || p.visibility === 'private' || p.visibility === undefined);
-};
+export const useProfile = () => {
+  const [state, setState] = useState<ProfileState>({
+    profile: null,
+    loading: false,
+    error: null
+  });
 
-export function useProfile() {
-  const { user } = useAuth();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const { toast } = useToast();
 
-  useEffect(() => {
-    if (!user) {
-      setProfile(null);
-      setLoading(false);
-      return;
-    }
-
-    async function loadProfile() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Try to fetch existing profile
-        const { data: existingProfile, error: fetchError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user!.id)
-          .single();
-
-        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-          throw fetchError;
-        }
-
-        if (existingProfile && isValidProfile(existingProfile)) {
-          setProfile(existingProfile);
-          return;
-        }
-
-        // Create new profile if none exists
-        const emailPrefix = user!.email?.split('@')[0] || '';
-        const userIdPrefix = user!.id.substring(0, 8);
-        const defaultUsername = emailPrefix || `user_${userIdPrefix}`;
-        const defaultDisplayName = emailPrefix || `User ${userIdPrefix}`;
-
-        const { data: newProfile, error: insertError } = await supabase
-          .from('profiles')
-          .insert([
-            {
-              id: user!.id,
-              email: user!.email || '',
-              username: defaultUsername,
-              display_name: defaultDisplayName,
-              avatar_url: null,
-              bio: '',
-              visibility: 'public' as const
-            }
-          ])
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-        
-        if (newProfile && isValidProfile(newProfile)) {
-          setProfile(newProfile);
-        } else {
-          throw new Error('Invalid profile data received from server');
-        }
-
-      } catch (err) {
-        console.error('Profile loading error:', err);
-        setError(err instanceof Error ? err : new Error('Failed to load profile'));
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadProfile();
-  }, [user]);
-
-  const updateProfile = async (updates: Partial<Profile>) => {
-    if (!user) throw new Error('No user logged in');
-    if (!profile) throw new Error('No profile loaded');
-    
+  const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     try {
-      setError(null);
-      const { data, error } = await supabase
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      logger.debug(`[${window.performance.now().toFixed(0)}] fetchProfile started for user: ${userId}`);
+
+      if (!userId) {
+        throw new Error('User ID is required to fetch profile');
+      }
+
+      const { data: profile, error } = await supabase
         .from('profiles')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id)
-        .select()
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // Profile not found
+          console.warn(`Profile not found for user: ${userId}`);
+          logger.debug(`[${window.performance.now().toFixed(0)}] fetchProfile - Profile not found for user: ${userId}`);
+          return null;
+        }
+        logger.error(`[${window.performance.now().toFixed(0)}] fetchProfile - Supabase error:`, error);
+        throw error;
+      }
+
+      if (!profile) {
+        console.warn(`No profile data returned for user: ${userId}`);
+        logger.warn(`[${window.performance.now().toFixed(0)}] fetchProfile - No profile data returned for user: ${userId}`);
+        return null;
+      }
+
+      setState(prev => ({
+        ...prev,
+        profile,
+        loading: false,
+        error: null
+      }));
+      logger.debug(`[${window.performance.now().toFixed(0)}] fetchProfile success for user: ${userId}`, { profile });
+
+      return profile;
+    } catch (error) {
+      logOnce('fetch-profile-error', 'Error fetching profile:', error);
+      logger.error(`[${window.performance.now().toFixed(0)}] fetchProfile error:`, error);
+
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error : new Error('Failed to fetch profile')
+      }));
+
+      toast({
+        variant: 'destructive',
+        title: 'Profile Error',
+        description: error instanceof Error ? error.message : 'Failed to fetch profile',
+      });
+
+      return null;
+    }
+  }, [toast]);
+
+  const updateProfile = useCallback(async (userId: string, updates: Partial<Profile>) => {
+    try {
+      setState(prev => ({ ...prev, loading: true, error: null }));
+
+      if (!userId) {
+        throw new Error('User ID is required to update profile');
+      }
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', userId)
         .single();
 
       if (error) throw error;
+
+      setState(prev => ({
+        ...prev,
+        profile: profile || prev.profile,
+        loading: false,
+        error: null
+      }));
+
+      toast({
+        title: 'Profile Updated',
+        description: 'Your profile has been updated successfully',
+      });
+
+      return true;
+    } catch (error) {
+      logOnce('update-profile-error', 'Error updating profile:', error);
       
-      if (data && isValidProfile(data)) {
-        setProfile(data);
-        return data;
-      }
-      
-      throw new Error('Invalid profile data received from server');
-    } catch (err) {
-      console.error('Profile update error:', err);
-      setError(err instanceof Error ? err : new Error('Failed to update profile'));
-      throw err;
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error : new Error('Failed to update profile')
+      }));
+
+      toast({
+        variant: 'destructive',
+        title: 'Profile Error',
+        description: error instanceof Error ? error.message : 'Failed to update profile',
+      });
+
+      return false;
     }
-  };
+  }, [toast]);
+
+  const createProfile = useCallback(async (userId: string, initialData: Partial<Profile>) => {
+    try {
+      setState(prev => ({ ...prev, loading: true, error: null }));
+
+      if (!userId) {
+        throw new Error('User ID is required to create profile');
+      }
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .insert([{ id: userId, ...initialData }])
+        .single();
+
+      if (error) throw error;
+
+      setState(prev => ({
+        ...prev,
+        profile: profile || prev.profile,
+        loading: false,
+        error: null
+      }));
+
+      toast({
+        title: 'Profile Created',
+        description: 'Your profile has been created successfully',
+      });
+
+      return profile;
+    } catch (error) {
+      logOnce('create-profile-error', 'Error creating profile:', error);
+      
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error : new Error('Failed to create profile')
+      }));
+
+      toast({
+        variant: 'destructive',
+        title: 'Profile Error',
+        description: error instanceof Error ? error.message : 'Failed to create profile',
+      });
+
+      return null;
+    }
+  }, [toast]);
 
   return {
-    profile,
-    loading,
-    error,
+    ...state,
+    fetchProfile,
     updateProfile,
+    createProfile
   };
-}
+};
