@@ -8,7 +8,7 @@ export class ChatAPI {
     const { data, error } = await supabase
       .from('profiles')
       .update(updates)
-      .eq('id', userId)
+      .eq('id', userId as string)
       .select()
       .single();
     
@@ -24,19 +24,22 @@ export class ChatAPI {
         name: chat.name,
         is_group: chat.is_group,
         created_by: chat.created_by,
-        pinned: chat.pinned
+        pinned: chat.pinned,
+        last_message: chat.last_message,
+        last_message_time: chat.last_message_time,
+        unread_count: chat.unread_count,
+        message_count: chat.message_count
       })
       .select()
       .single();
 
     if (chatError) throw chatError;
 
-    // Add chat members
-    if (chat.chat_members) {
+    if (chat.members && chat.members.length > 0) {
       const { error: membersError } = await supabase
         .from('chat_members')
         .insert(
-          chat.chat_members.map(member => ({
+          chat.members.map(member => ({
             chat_id: chatData.id,
             profile_id: member.profile_id,
             joined_at: new Date().toISOString()
@@ -89,7 +92,7 @@ export class ChatAPI {
       if (error) throw error;
 
       // Transform the response to match our Chat type
-      return (chatMembers || []).map(member => {
+        return (chatMembers || []).map(member => {
         const chat = member.chats[0];
         return {
           id: chat.id,
@@ -97,21 +100,23 @@ export class ChatAPI {
           is_group: chat.is_group,
           created_by: chat.created_by,
           created_at: chat.created_at,
+          updated_at: chat.updated_at,
           last_message: chat.last_message || '',
           last_message_time: chat.last_message_time || '',
           pinned: chat.pinned,
-          updated_at: chat.updated_at,
+          message_count: 0, // Will be updated with actual count
           unread_count: 0, // This should be calculated separately
-          unread: false, // This should be calculated separately
-          chat_members: chat.chat_members.map((chatMember: any) => ({
-            chat_id: chatMember.chat_id,
-            profile_id: chatMember.profile_id,
-            joined_at: chatMember.joined_at,
-            profiles: {
-              id: chatMember.profiles.id,
-              display_name: chatMember.profiles.display_name,
-              avatar_url: chatMember.profiles.avatar_url ?? null
-            }
+            creator: {
+            id: member.profiles[0].id,
+            display_name: member.profiles[0].display_name,
+            avatar_url: member.profiles[0].avatar_url,
+            created_at: chat.created_at,
+            updated_at: chat.updated_at
+            },
+          members: chat.chat_members.map(chatMember => ({
+          chat_id: chatMember.chat_id,
+          profile_id: chatMember.profile_id,
+          joined_at: chatMember.joined_at
           }))
         };
       });
@@ -122,12 +127,12 @@ export class ChatAPI {
   }
 
   // Message Management
-  static async sendMessage(message: Omit<Message, 'id' | 'created_at' | 'updated_at'>) {
+  static async sendMessage(message: Omit<Message, 'id' | 'createdAt' | 'updatedAt'>) {
     const { data, error } = await supabase
       .from('messages')
       .insert({
-        chat_id: message.chat_id,
-        sender_id: message.sender_id,
+        chat_id: message.chatId,
+        sender_id: message.senderId,
         content: message.content,
         type: message.type,
         reactions: message.reactions
