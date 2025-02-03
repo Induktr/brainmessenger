@@ -10,7 +10,7 @@ interface UserMenuProps {
 }
 
 export const UserMenu = ({ asDropdownItems }: UserMenuProps = {}) => {
-  const { user, logout: signOut } = useAuth();
+  const { user, logout } = useAuth();
   const { profile, loading } = useProfile();
   const [isOpen, setIsOpen] = useState(false);
 
@@ -30,7 +30,7 @@ export const UserMenu = ({ asDropdownItems }: UserMenuProps = {}) => {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => signOut()}>
+        <DropdownMenuItem onClick={() => logout()}>
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -59,7 +59,7 @@ export const UserMenu = ({ asDropdownItems }: UserMenuProps = {}) => {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => signOut()}>
+        <DropdownMenuItem onClick={() => logout()}>
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
