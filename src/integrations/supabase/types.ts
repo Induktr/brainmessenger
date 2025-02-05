@@ -6,145 +6,104 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export interface Message {
-  id: string
-  conversation_id: string | null
-  chat_id: string | null
-  sender_id: string
-  content: string
-  created_at: string
-  updated_at: string
-  is_read: boolean
-  type: 'text' | 'image' | 'audio' | 'video'
-  reactions: Json
-}
-
-export interface Conversation {
-  id: string
-  created_at: string
-  updated_at: string
-  user1_id: string
-  user2_id: string
-  last_message: Json | null
-}
-
-export interface Chat {
-  id: string
-  name: string
-  is_group: boolean
-  created_by: string
-  created_at: string
-  updated_at: string
-  last_message: Json | null
-  pinned: boolean
-}
-
-export interface ChatMember {
-  chat_id: string
-  user_id: string
-  joined_at: string
-}
-
-export interface ChatMemberWithRelations extends ChatMember {
-  profiles: {
-    id: string
-    display_name: string
-    avatar_url: string | null
-  }
-  chats: Chat
-}
-
-export interface ChatWithMembers extends Chat {
-  chat_members: (ChatMember & {
-    user: {
-      id: string
-      display_name: string
-      avatar_url: string | null
-    }
-  })[]
-}
-
-export interface Profile {
-  id: string
-  display_name: string
-  avatar_url: string | null
-}
-
 export type Database = {
   public: {
     Tables: {
-      profiles: {
+      chat_members: {
         Row: {
-          avatar_url: string | null
+          chat_id: string
+          created_at: string | null
           id: string
-          updated_at: string | null
-          username: string | null
-          display_name: string | null
+          profile_id: string
         }
         Insert: {
-          avatar_url?: string | null
-          id: string
-          updated_at?: string | null
-          username?: string | null
-          display_name?: string | null
+          chat_id: string
+          created_at?: string | null
+          id?: string
+          profile_id: string
         }
         Update: {
-          avatar_url?: string | null
+          chat_id?: string
+          created_at?: string | null
           id?: string
-          updated_at?: string | null
-          username?: string | null
-          display_name?: string | null
-        }
-        Relationships: []
-      }
-      user_sessions: {
-        Row: {
-          id: string
-          user_id: string
-          started_at: string
-          ended_at: string | null
-          ip_address: string | null
-          user_agent: string | null
-          device_info: Json
-          logout_reason: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          started_at?: string
-          ended_at?: string | null
-          ip_address?: string | null
-          user_agent?: string | null
-          device_info?: Json
-          logout_reason?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          started_at?: string
-          ended_at?: string | null
-          ip_address?: string | null
-          user_agent?: string | null
-          device_info?: Json
-          logout_reason?: string | null
-          created_at?: string
+          profile_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "user_sessions_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "chat_members_profile_id_fkey"
+            columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-          }
+          },
+        ]
+      }
+      chats: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_group: boolean | null
+          last_message: Json | null
+          name: string
+          pinned: boolean | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_group?: boolean | null
+          last_message?: Json | null
+          name: string
+          pinned?: boolean | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_group?: boolean | null
+          last_message?: Json | null
+          name?: string
+          pinned?: boolean | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chats_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
         ]
       }
       conversations: {
-        Row: Conversation
-        Insert: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Conversation>
+        Row: {
+          created_at: string | null
+          id: string
+          last_message: Json | null
+          updated_at: string | null
+          user1_id: string | null
+          user2_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          last_message?: Json | null
+          updated_at?: string | null
+          user1_id?: string | null
+          user2_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          last_message?: Json | null
+          updated_at?: string | null
+          user1_id?: string | null
+          user2_id?: string | null
+        }
         Relationships: [
           {
             foreignKeyName: "conversations_user1_id_fkey"
@@ -159,21 +118,47 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
       messages: {
-        Row: Message
-        Insert: Omit<Message, 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Message>
+        Row: {
+          chat_id: string | null
+          content: string
+          conversation_id: string | null
+          created_at: string | null
+          id: string
+          is_read: boolean | null
+          reactions: Json | null
+          sender_id: string | null
+          type: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          chat_id?: string | null
+          content: string
+          conversation_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          reactions?: Json | null
+          sender_id?: string | null
+          type?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          chat_id?: string | null
+          content?: string
+          conversation_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          reactions?: Json | null
+          sender_id?: string | null
+          type?: string | null
+          updated_at?: string | null
+        }
         Relationships: [
-          {
-            foreignKeyName: "messages_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "messages_chat_id_fkey"
             columns: ["chat_id"]
@@ -182,58 +167,221 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "messages_sender_id_fkey"
             columns: ["sender_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
-      chats: {
-        Row: Chat
-        Insert: Omit<Chat, 'id' | 'created_at' | 'updated_at'>
-        Update: Partial<Chat>
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          display_name: string | null
+          email: string
+          id: string
+          updated_at: string | null
+          username: string | null
+          visibility: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          display_name?: string | null
+          email: string
+          id?: string
+          updated_at?: string | null
+          username?: string | null
+          visibility?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          display_name?: string | null
+          email?: string
+          id?: string
+          updated_at?: string | null
+          username?: string | null
+          visibility?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "chats_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
+            foreignKeyName: "profiles_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
             referencedRelation: "users"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
-      chat_members: {
-        Row: ChatMember
-        Insert: Omit<ChatMember, 'joined_at'>
-        Update: Partial<ChatMember>
+      user_preferences: {
+        Row: {
+          language: string | null
+          notification_settings: Json | null
+          theme: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          language?: string | null
+          notification_settings?: Json | null
+          theme?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          language?: string | null
+          notification_settings?: Json | null
+          theme?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_sessions: {
+        Row: {
+          device_info: Json | null
+          end_reason: string | null
+          ended_at: string | null
+          id: string
+          ip_address: string | null
+          started_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          device_info?: Json | null
+          end_reason?: string | null
+          ended_at?: string | null
+          id?: string
+          ip_address?: string | null
+          started_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          device_info?: Json | null
+          end_reason?: string | null
+          ended_at?: string | null
+          id?: string
+          ip_address?: string | null
+          started_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "chat_members_chat_id_fkey"
-            columns: ["chat_id"]
-            isOneToOne: false
-            referencedRelation: "chats"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_members_user_id_fkey"
+            foreignKeyName: "user_sessions_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
     }
     Views: {
-      [_ in never]: never
+      users: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          first_name: string | null
+          id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          first_name?: never
+          id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          first_name?: never
+          id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      generate_unique_username: {
+        Args: {
+          base_username: string
+        }
+        Returns: string
+      }
+      get_foreign_keys: {
+        Args: {
+          table_name: string
+        }
+        Returns: {
+          column_name: string
+          foreign_table_name: string
+          foreign_schema_name: string
+          foreign_column_name: string
+        }[]
+      }
+      get_table_info: {
+        Args: {
+          p_table_name: string
+        }
+        Returns: {
+          column_name: string
+          data_type: string
+          is_nullable: boolean
+          column_default: string
+        }[]
+      }
+      get_user_chats: {
+        Args: {
+          user_uuid: string
+        }
+        Returns: {
+          chat_id: string
+          chat_name: string
+          is_group: boolean
+          last_message: string
+          last_message_time: string
+          member_count: number
+        }[]
+      }
+      update_profile: {
+        Args: {
+          profile_updates: Json
+          timestamp_param: string
+        }
+        Returns: Json
+      }
+      update_profile_settings: {
+        Args: {
+          user_id: string
+          new_username: string
+          new_display_name: string
+          new_bio: string
+          new_visibility: string
+        }
+        Returns: Json
+      }
+      update_user_avatar: {
+        Args: {
+          user_id: string
+          new_avatar_url: string
+          timestamp_param: string
+        }
+        Returns: string
+      }
     }
     Enums: {
-      [_ in never]: never
+      message_type: "text" | "image" | "audio" | "video"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -260,7 +408,8 @@ export type Tables<
     : never
   : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
         PublicSchema["Views"])
-    ? (PublicSchema["Tables"] & PublicSchema["Views"])[PublicTableNameOrOptions] extends {
+    ? (PublicSchema["Tables"] &
+        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
